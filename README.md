@@ -55,7 +55,12 @@ open the curtains are up the side.
   chart says how many commands that is and when the last one goes.
 - **Test opening** and **Test closing** run the move on the real curtains.
 
-The **Room** tab holds the rest: the room's name, its curtains, which of the
+The **Room** tab holds the rest. Its curtains table says, for each real
+curtain, whether the room's **normal** and **gentle** curtain move it — say
+both halves for everyday use but only the window side for the sunrise — and
+whether it is also offered **on its own** as a full-speed curtain, so every
+curtain in the house can go through Gentle Cover. Below the table: the room's
+name, which of the
 normal and gentle curtains exist and what they are called (the page shows the
 full name each will get), and the **scale**
 — *100 % = open* (Home Assistant's way) or *100 % = closed*. The scale is how
@@ -113,6 +118,11 @@ It takes either of a room's curtains and draws the room's curve and current
 position in the room's scale, and during a gentle move a marker travelling
 along the curve with the time left. It is read-only; it is also in the card
 picker.
+
+## Upgrading from 0.3
+
+Existing rooms keep moving all their curtains with both the normal and the
+gentle curtain, and no curtain is offered on its own until you tick it.
 
 ## Upgrading from 0.2
 

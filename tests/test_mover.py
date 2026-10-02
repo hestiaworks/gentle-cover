@@ -82,6 +82,15 @@ class MoveTest(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(self.events, [("end", "interrupted")], entity_id)
 
+    async def test_command_to_a_curtain_outside_the_move_is_ignored(self):
+        self.make_move(covers=(LEFT,)).start()
+        await settle()
+        self.hass.bus.fire(
+            "call_service",
+            {"domain": "cover", "service": "open_cover", "service_data": {"entity_id": RIGHT}},
+        )
+        self.assertEqual(self.events, [])
+
     async def test_stale_report_of_old_position_does_not_interrupt(self):
         mover.SETTLE_GRACE_S = 0
         try:

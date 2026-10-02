@@ -37,9 +37,12 @@ from .const import (
     CONF_CLOSE_CURVE,
     CONF_CLOSE_DURATION,
     CONF_COVERS,
+    CONF_GENTLE_COVERS,
     CONF_GENTLE_ENABLED,
     CONF_GENTLE_NAME,
+    CONF_INDIVIDUAL,
     CONF_MIN_STEP,
+    CONF_NORMAL_COVERS,
     CONF_NORMAL_ENABLED,
     CONF_NORMAL_NAME,
     CONF_OPEN_CURVE,
@@ -63,6 +66,10 @@ def normal_unique_id(entry: ConfigEntry) -> str:
     return f"{entry.entry_id}_normal"
 
 
+def own_unique_id(entry: ConfigEntry, entity_id: str) -> str:
+    return f"{entry.entry_id}_own_{entity_id}"
+
+
 def gentle_unique_id(entry: ConfigEntry) -> str:
     # The entry id alone, as before there were two curtains: existing gentle
     # curtains keep their entity ids, and with them automations and HomeKit.
@@ -83,6 +90,20 @@ async def async_setup_entry(
         elif entity_id := registry.async_get_entity_id(COVER_DOMAIN, DOMAIN, unique_id):
             # Switched off: gone, not left behind as an unavailable entity.
             registry.async_remove(entity_id)
+    individual = entry.options.get(CONF_INDIVIDUAL, {})
+    wanted = {
+        own_unique_id(entry, entity_id)
+        for entity_id, own in individual.items()
+        if own.get("enabled") and entity_id in entry.data[CONF_COVERS]
+    }
+    for entity_id in entry.data[CONF_COVERS]:
+        if own_unique_id(entry, entity_id) in wanted:
+            entities.append(OwnCover(entry, entity_id))
+    prefix = f"{entry.entry_id}_own_"
+    for registered in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if registered.unique_id.startswith(prefix) and registered.unique_id not in wanted:
+            # Switched off, or its real curtain left the room.
+            registry.async_remove(registered.entity_id)
     async_add_entities(entities)
     platform = entity_platform.async_get_current_platform()
     platform.async_register_entity_service(
@@ -128,16 +149,22 @@ class RoomCover(CoverEntity):
     )
     _name_key: str
 
-    def __init__(self, entry: ConfigEntry) -> None:
+    def __init__(self, entry: ConfigEntry, members: list[str] | None = None) -> None:
         self._entry = entry
-        self._covers: list[str] = list(entry.data[CONF_COVERS])
-        self._attr_name = self._option(self._name_key) or None
+        # The real curtains this one moves: a choice from the room's.
+        self._covers: list[str] = (
+            list(members) if members is not None else list(entry.data[CONF_COVERS])
+        )
+        self._attr_name = self._entity_name()
         # A device per room, carrying the room's name.
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             name=entry.title,
             manufacturer="Gentle Cover",
         )
+
+    def _entity_name(self) -> str | None:
+        return self._option(self._name_key) or None
 
     def _option(self, key: str) -> Any:
         if key in self._entry.options:
@@ -148,6 +175,9 @@ class RoomCover(CoverEntity):
             CONF_NORMAL_NAME: "",
             CONF_GENTLE_NAME: "Gentle",
             CONF_SCALE: SCALE_OPEN_IS_100,
+            CONF_NORMAL_COVERS: list(self._entry.data[CONF_COVERS]),
+            CONF_GENTLE_COVERS: list(self._entry.data[CONF_COVERS]),
+            CONF_INDIVIDUAL: {},
         }.get(key)
 
     def _positions(self) -> list[float]:
@@ -208,8 +238,10 @@ class NormalCover(RoomCover):
 
     _name_key = CONF_NORMAL_NAME
 
-    def __init__(self, entry: ConfigEntry) -> None:
-        super().__init__(entry)
+    def __init__(self, entry: ConfigEntry, members: list[str] | None = None) -> None:
+        if members is None:
+            members = entry.options.get(CONF_NORMAL_COVERS, entry.data[CONF_COVERS])
+        super().__init__(entry, members)
         self._attr_unique_id = normal_unique_id(entry)
 
     def _members_in(self, state: str) -> bool:
@@ -249,13 +281,27 @@ class NormalCover(RoomCover):
         await self._command(SERVICE_STOP_COVER)
 
 
+class OwnCover(NormalCover):
+    """One real curtain on its own, at full speed, named like the room's
+    others and counting in the room's scale."""
+
+    def __init__(self, entry: ConfigEntry, entity_id: str) -> None:
+        self._member = entity_id
+        super().__init__(entry, [entity_id])
+        self._attr_unique_id = own_unique_id(entry, entity_id)
+
+    def _entity_name(self) -> str | None:
+        own = self._entry.options.get(CONF_INDIVIDUAL, {}).get(self._member, {})
+        return own.get("name") or None
+
+
 class GentleCover(RoomCover):
     """The room's curtains along the room's curve."""
 
     _name_key = CONF_GENTLE_NAME
 
     def __init__(self, entry: ConfigEntry) -> None:
-        super().__init__(entry)
+        super().__init__(entry, entry.options.get(CONF_GENTLE_COVERS, entry.data[CONF_COVERS]))
         self._attr_unique_id = gentle_unique_id(entry)
         self._move: GentleMove | None = None
         self._direction = OPEN

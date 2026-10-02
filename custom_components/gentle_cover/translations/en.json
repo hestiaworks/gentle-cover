@@ -1,0 +1,45 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add a room",
+        "description": "The curtains in this room move together, in slow eased steps. The real curtains keep working as before for normal, fast movement.",
+        "data": {
+          "name": "Room name",
+          "covers": "Curtains"
+        },
+        "data_description": {
+          "name": "For example \"Bedroom Curtains\". The gentle curtain becomes cover.<room>_gentle.",
+          "covers": "The real curtains of this room. They must report and accept a position."
+        }
+      }
+    },
+    "error": {
+      "own_entity": "That is already a gentle curtain. Choose the real curtains."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Movement",
+        "description": "Curves, durations and step settings are edited on the Gentle Cover page in the sidebar."
+      }
+    }
+  },
+  "services": {
+    "move": {
+      "name": "Gentle move",
+      "description": "Move a gentle curtain to a position along its curve, optionally with a different duration than its settings.",
+      "fields": {
+        "position": {
+          "name": "Position",
+          "description": "Target position, 0 is closed and 100 is open."
+        },
+        "duration": {
+          "name": "Duration",
+          "description": "Minutes for a full open or close; leave empty to use the room's setting."
+        }
+      }
+    }
+  }
+}

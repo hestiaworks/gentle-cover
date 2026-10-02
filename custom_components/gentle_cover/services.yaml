@@ -1,0 +1,22 @@
+move:
+  target:
+    entity:
+      integration: gentle_cover
+      domain: cover
+  fields:
+    position:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          unit_of_measurement: "%"
+    duration:
+      selector:
+        number:
+          min: 1
+          max: 240
+          step: 1
+          unit_of_measurement: min
+          mode: box

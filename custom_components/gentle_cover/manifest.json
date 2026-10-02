@@ -1,0 +1,13 @@
+{
+  "domain": "gentle_cover",
+  "name": "Gentle Cover",
+  "codeowners": ["@theseus-elysium"],
+  "config_flow": true,
+  "dependencies": ["frontend", "http", "websocket_api"],
+  "documentation": "https://github.com/hestiaworks/gentle-cover",
+  "integration_type": "device",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/hestiaworks/gentle-cover/issues",
+  "requirements": [],
+  "version": "0.2.0"
+}

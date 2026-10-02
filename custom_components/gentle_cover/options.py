@@ -10,9 +10,12 @@ from typing import Any
 from .const import (
     CONF_CLOSE_CURVE,
     CONF_CLOSE_DURATION,
+    CONF_GENTLE_COVERS,
     CONF_GENTLE_ENABLED,
     CONF_GENTLE_NAME,
+    CONF_INDIVIDUAL,
     CONF_MIN_STEP,
+    CONF_NORMAL_COVERS,
     CONF_NORMAL_ENABLED,
     CONF_NORMAL_NAME,
     CONF_OPEN_CURVE,
@@ -43,7 +46,7 @@ COVER_PROBLEMS = {
 }
 
 
-def defaults(title: str) -> dict[str, Any]:
+def defaults(title: str, covers: list[str]) -> dict[str, Any]:
     """A new room: both curtains.
 
     Curtain names follow the room's name, the way Home Assistant shows any
@@ -58,6 +61,9 @@ def defaults(title: str) -> dict[str, Any]:
             CONF_GENTLE_ENABLED: True,
             CONF_GENTLE_NAME: "Sunrise",
             CONF_SCALE: SCALE_OPEN_IS_100,
+            CONF_NORMAL_COVERS: list(covers),
+            CONF_GENTLE_COVERS: list(covers),
+            CONF_INDIVIDUAL: {},
         }
     )
     return options
@@ -96,6 +102,45 @@ def migrate_room_settings(options: dict[str, Any], title: str) -> dict[str, Any]
     return new
 
 
+def migrate_room_covers(options: dict[str, Any], covers: list[str]) -> dict[str, Any]:
+    """A room from before curtains were chosen: both move all of them, and
+    none is offered on its own — exactly as it behaved."""
+    new = copy.deepcopy(options)
+    new.setdefault(CONF_NORMAL_COVERS, list(covers))
+    new.setdefault(CONF_GENTLE_COVERS, list(covers))
+    new.setdefault(CONF_INDIVIDUAL, {})
+    return new
+
+
+def default_own_name(curtain_name: str, room_title: str) -> str:
+    """A real curtain's name without the room's name in front.
+
+    Names follow the room's name when shown, so "Bedroom Curtains Right" in
+    the Bedroom becomes "Curtains Right", shown as "Bedroom Curtains Right".
+    """
+    name = curtain_name.strip()
+    title = room_title.strip()
+    if title and name.casefold().startswith(title.casefold()):
+        rest = name[len(title):].strip()
+        if rest:
+            return rest
+    return name
+
+
+def _subset(value: Any, covers: list[str], what: str, required: bool) -> list[str]:
+    if not isinstance(value, list) or not all(isinstance(c, str) for c in value):
+        raise ValueError(f"{what}: curtains must be a list of entity ids")
+    if len(set(value)) != len(value):
+        raise ValueError(f"{what}: a curtain is listed twice")
+    for entity_id in value:
+        if entity_id not in covers:
+            raise ValueError(f"{what}: {entity_id} is not one of the room's curtains")
+    if required and not value:
+        raise ValueError(f"{what} needs at least one curtain to move")
+    # In the room's order, so saving the same choice twice stores the same list.
+    return [entity_id for entity_id in covers if entity_id in value]
+
+
 def _name(value: Any, what: str, *, required: bool = True) -> str:
     if not isinstance(value, str):
         raise ValueError(f"{what}: the name must be text")
@@ -107,7 +152,7 @@ def _name(value: Any, what: str, *, required: bool = True) -> str:
     return name
 
 
-def validate_options(data: dict[str, Any]) -> dict[str, Any]:
+def validate_options(data: dict[str, Any], covers: list[str]) -> dict[str, Any]:
     """The options as stored, or ValueError naming the first problem."""
     result: dict[str, Any] = {}
     for key, (low, high) in RANGES.items():
@@ -124,13 +169,42 @@ def validate_options(data: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(data.get(key), bool):
             raise ValueError(f"{key} must be on or off")
         result[key] = data[key]
-    if not (result[CONF_NORMAL_ENABLED] or result[CONF_GENTLE_ENABLED]):
-        raise ValueError("a room needs at least one curtain")
     result[CONF_NORMAL_NAME] = _name(data.get(CONF_NORMAL_NAME), "The normal curtain", required=False)
     result[CONF_GENTLE_NAME] = _name(data.get(CONF_GENTLE_NAME), "The gentle curtain", required=False)
-    if result[CONF_NORMAL_NAME].casefold() == result[CONF_GENTLE_NAME].casefold():
-        # Both would show as the same thing in Home Assistant and HomeKit.
-        raise ValueError("the normal and the gentle curtain need different names")
+    result[CONF_NORMAL_COVERS] = _subset(
+        data.get(CONF_NORMAL_COVERS), covers, "The normal curtain", result[CONF_NORMAL_ENABLED]
+    )
+    result[CONF_GENTLE_COVERS] = _subset(
+        data.get(CONF_GENTLE_COVERS), covers, "The gentle curtain", result[CONF_GENTLE_ENABLED]
+    )
+    individual = data.get(CONF_INDIVIDUAL, {})
+    if not isinstance(individual, dict):
+        raise ValueError("own curtains must be a mapping of curtain to settings")
+    result[CONF_INDIVIDUAL] = {}
+    for entity_id, own in individual.items():
+        if entity_id not in covers:
+            raise ValueError(f"{entity_id} is not one of the room's curtains")
+        if not isinstance(own, dict) or not isinstance(own.get("enabled"), bool):
+            raise ValueError(f"{entity_id}: on its own must be on or off")
+        result[CONF_INDIVIDUAL][entity_id] = {
+            "enabled": own["enabled"],
+            "name": _name(own.get("name", ""), entity_id, required=False),
+        }
+    enabled_names = [
+        name
+        for on, name in (
+            (result[CONF_NORMAL_ENABLED], result[CONF_NORMAL_NAME]),
+            (result[CONF_GENTLE_ENABLED], result[CONF_GENTLE_NAME]),
+            *((own["enabled"], own["name"]) for own in result[CONF_INDIVIDUAL].values()),
+        )
+        if on
+    ]
+    if not enabled_names:
+        raise ValueError("a room needs at least one curtain")
+    folded = [name.casefold() for name in enabled_names]
+    if len(set(folded)) != len(folded):
+        # Two would show as the same thing in Home Assistant and HomeKit.
+        raise ValueError("every curtain in a room needs a different name")
     if data.get(CONF_SCALE) not in SCALES:
         raise ValueError("scale must be open_is_100 or closed_is_100")
     result[CONF_SCALE] = data[CONF_SCALE]

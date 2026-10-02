@@ -15,7 +15,8 @@ from homeassistant.helpers.typing import ConfigType
 
 from . import websocket
 from .const import DOMAIN
-from .options import migrate_options, migrate_room_settings
+from .const import CONF_COVERS
+from .options import migrate_options, migrate_room_covers, migrate_room_settings
 from .page import async_setup_page
 
 PLATFORMS = [Platform.COVER]
@@ -47,14 +48,16 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Easings became curves in minor version 2; rooms got two named
-    curtains and a scale in 3."""
+    curtains and a scale in 3, and a choice of which curtains each moves in 4."""
     if entry.version != 1:
         return False
-    if entry.minor_version >= 3:
+    if entry.minor_version >= 4:
         return True
     options = dict(entry.options)
     if entry.minor_version < 2:
         options = migrate_options(options)
-    options = migrate_room_settings(options, entry.title)
-    hass.config_entries.async_update_entry(entry, options=options, minor_version=3)
+    if entry.minor_version < 3:
+        options = migrate_room_settings(options, entry.title)
+    options = migrate_room_covers(options, list(entry.data.get(CONF_COVERS, [])))
+    hass.config_entries.async_update_entry(entry, options=options, minor_version=4)
     return True

@@ -107,7 +107,6 @@ def ws_save(
         connection.send_error(msg["id"], "not_found", "No such room")
         return
     try:
-        options = validate_options(msg["options"])
         title = validate_title(
             msg.get("title", entry.title), taken_titles(hass, except_entry_id=entry.entry_id)
         )
@@ -115,6 +114,9 @@ def ws_save(
             msg.get("covers", list(entry.data.get(CONF_COVERS, []))),
             lambda entity_id: describe_cover(hass, entity_id),
         )
+        # Checked against the curtains being saved, so a choice that still
+        # names a curtain just removed from the room is refused.
+        options = validate_options(msg["options"], covers)
     except ValueError as err:
         connection.send_error(msg["id"], "invalid_options", str(err))
         return

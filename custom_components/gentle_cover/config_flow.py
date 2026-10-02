@@ -89,7 +89,7 @@ class GentleCoverConfigFlow(ConfigFlow, domain=DOMAIN):
                 return self.async_create_entry(
                     title=title,
                     data={CONF_NAME: title, CONF_COVERS: covers},
-                    options=defaults(title),
+                    options=defaults(title, covers),
                 )
         return self.async_show_form(
             step_id="user",

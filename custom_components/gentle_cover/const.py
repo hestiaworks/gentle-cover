@@ -5,7 +5,7 @@ from __future__ import annotations
 from .curve import CLOSE, OPEN, PRESETS
 
 DOMAIN = "gentle_cover"
-MINOR_VERSION = 3
+MINOR_VERSION = 4
 
 CONF_COVERS = "covers"
 CONF_OPEN_DURATION = "open_duration"
@@ -19,6 +19,11 @@ CONF_NORMAL_NAME = "normal_name"
 CONF_GENTLE_ENABLED = "gentle_enabled"
 CONF_GENTLE_NAME = "gentle_name"
 CONF_SCALE = "scale"
+# Which of the room's real curtains the normal and gentle curtain move, and
+# which real curtains are also offered on their own.
+CONF_NORMAL_COVERS = "normal_covers"
+CONF_GENTLE_COVERS = "gentle_covers"
+CONF_INDIVIDUAL = "individual"
 
 # How the page, the card and the move action count. Home Assistant and
 # HomeKit always see 100 = open; this is only how numbers are shown and read.

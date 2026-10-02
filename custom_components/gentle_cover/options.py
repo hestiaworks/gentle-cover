@@ -44,14 +44,19 @@ COVER_PROBLEMS = {
 
 
 def defaults(title: str) -> dict[str, Any]:
-    """A new room: both curtains, the normal one named after the room."""
+    """A new room: both curtains.
+
+    Curtain names follow the room's name, the way Home Assistant shows any
+    entity of a device: "" is the room itself ("Bedroom"), "Sunrise" shows as
+    "Bedroom Sunrise". Renaming the room renames its curtains with it.
+    """
     options = copy.deepcopy(DEFAULT_OPTIONS)
     options.update(
         {
             CONF_NORMAL_ENABLED: True,
-            CONF_NORMAL_NAME: title,
+            CONF_NORMAL_NAME: "",
             CONF_GENTLE_ENABLED: True,
-            CONF_GENTLE_NAME: f"{title} Sunrise",
+            CONF_GENTLE_NAME: "Sunrise",
             CONF_SCALE: SCALE_OPEN_IS_100,
         }
     )
@@ -83,17 +88,20 @@ def migrate_room_settings(options: dict[str, Any], title: str) -> dict[str, Any]
     """
     new = copy.deepcopy(options)
     new.setdefault(CONF_NORMAL_ENABLED, False)
-    new.setdefault(CONF_NORMAL_NAME, title)
+    new.setdefault(CONF_NORMAL_NAME, "")
     new.setdefault(CONF_GENTLE_ENABLED, True)
-    new.setdefault(CONF_GENTLE_NAME, f"{title} Gentle")
+    # Shown as "<room> Gentle", which is what it was called before.
+    new.setdefault(CONF_GENTLE_NAME, "Gentle")
     new.setdefault(CONF_SCALE, SCALE_OPEN_IS_100)
     return new
 
 
-def _name(value: Any, what: str) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"{what} needs a name")
+def _name(value: Any, what: str, *, required: bool = True) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{what}: the name must be text")
     name = value.strip()
+    if required and not name:
+        raise ValueError(f"{what} needs a name")
     if len(name) > NAME_MAX:
         raise ValueError(f"{what}: a name is at most {NAME_MAX} characters")
     return name
@@ -118,8 +126,11 @@ def validate_options(data: dict[str, Any]) -> dict[str, Any]:
         result[key] = data[key]
     if not (result[CONF_NORMAL_ENABLED] or result[CONF_GENTLE_ENABLED]):
         raise ValueError("a room needs at least one curtain")
-    result[CONF_NORMAL_NAME] = _name(data.get(CONF_NORMAL_NAME), "The normal curtain")
-    result[CONF_GENTLE_NAME] = _name(data.get(CONF_GENTLE_NAME), "The gentle curtain")
+    result[CONF_NORMAL_NAME] = _name(data.get(CONF_NORMAL_NAME), "The normal curtain", required=False)
+    result[CONF_GENTLE_NAME] = _name(data.get(CONF_GENTLE_NAME), "The gentle curtain", required=False)
+    if result[CONF_NORMAL_NAME].casefold() == result[CONF_GENTLE_NAME].casefold():
+        # Both would show as the same thing in Home Assistant and HomeKit.
+        raise ValueError("the normal and the gentle curtain need different names")
     if data.get(CONF_SCALE) not in SCALES:
         raise ValueError("scale must be open_is_100 or closed_is_100")
     result[CONF_SCALE] = data[CONF_SCALE]

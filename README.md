@@ -27,6 +27,11 @@ Add Integration → Gentle Cover**, once per room: give the room a name and pick
 its curtains. A room called "Bedroom" gets a normal curtain "Bedroom" and a
 gentle curtain "Bedroom Sunrise"; rename or switch either off on the page.
 
+Curtain names come after the room's name, the way Home Assistant shows every
+device's entities: the gentle curtain's name "Sunrise" shows as "Bedroom
+Sunrise", and an empty name shows as just "Bedroom". Renaming the room renames
+its curtains with it.
+
 The curtains must report and accept a position (`current_position` and
 `cover.set_cover_position`).
 
@@ -51,7 +56,8 @@ open the curtains are up the side.
 - **Test opening** and **Test closing** run the move on the real curtains.
 
 The **Room** tab holds the rest: the room's name, its curtains, which of the
-normal and gentle curtains exist and what they are called, and the **scale**
+normal and gentle curtains exist and what they are called (the page shows the
+full name each will get), and the **scale**
 — *100 % = open* (Home Assistant's way) or *100 % = closed*. The scale is how
 this page, the card and the `gentle_cover.move` action count; Home Assistant
 and HomeKit always use 100 % = open, because that is what their sliders and

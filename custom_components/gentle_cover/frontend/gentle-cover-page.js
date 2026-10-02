@@ -416,23 +416,26 @@ class GentleCoverPage extends HTMLElement {
   }
 
   async test(direction) {
-    const room = this.room();
-    if (!room?.entity_id) return;
+    if (!this.draft?.gentle_enabled) return;
+    let entityId = this.room()?.gentle_entity_id;
     if (this.dirty()) {
+      const savedAt = Date.now();
       if (!(await this.save())) return;
-      // Saving reloads the room; a command sent before it is back would be
-      // lost with the old entity.
+      // Saving reloads the room; a command sent before its gentle curtain is
+      // back would be lost with the old one.
       this.status = "Applying the new settings…";
       this.renderSaveState();
-      if (!(await this.waitForReload(this.room()))) {
+      entityId = await this.waitForGentle(savedAt);
+      if (!entityId) {
         this.error = "The room did not come back after saving; try Test again.";
         this.renderNotice();
         return;
       }
     }
+    if (!entityId) return;
     try {
       await this._hass.callService("cover", direction === "open" ? "open_cover" : "close_cover", {
-        entity_id: room.entity_id,
+        entity_id: entityId,
       });
       this.status = direction === "open" ? "Opening — watch the curtains" : "Closing — watch the curtains";
     } catch (err) {
@@ -443,20 +446,18 @@ class GentleCoverPage extends HTMLElement {
     this.renderSaveState();
   }
 
-  /** Until the room's entity carries the saved curves, or ten seconds pass. */
-  async waitForReload(room) {
-    if (!room?.entity_id) return false;
-    const want = JSON.stringify([this.saved.open_curve, this.saved.close_curve]);
-    for (let i = 0; i < 50; i++) {
-      const state = this._hass?.states[room.entity_id];
-      const attributes = state?.attributes;
-      if (state && state.state !== "unavailable" && attributes?.open_curve &&
-          JSON.stringify([attributes.open_curve, attributes.close_curve]) === want) {
-        return true;
+  /** The room's gentle curtain once it has been set up again after a save. */
+  async waitForGentle(savedAt) {
+    for (let i = 0; i < 40; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      if (i % 4 === 3) await this.reloadRooms();
+      const id = this.room()?.gentle_entity_id;
+      const state = id && this._hass?.states[id];
+      if (state && state.state !== "unavailable" && new Date(state.last_changed).getTime() >= savedAt) {
+        return id;
       }
-      await new Promise((resolve) => setTimeout(resolve, 200));
     }
-    return false;
+    return null;
   }
 
   // --- rendering ----------------------------------------------------------------
@@ -565,8 +566,9 @@ class GentleCoverPage extends HTMLElement {
           </div>
           <div class="summary" data-summary></div>
           <div class="actions">
-            <button data-test="open" ${room?.entity_id ? "" : "disabled"}>Test opening</button>
-            <button data-test="close" ${room?.entity_id ? "" : "disabled"}>Test closing</button>
+            <button data-test="open" ${this.draft.gentle_enabled ? "" : "disabled"}>Test opening</button>
+            <button data-test="close" ${this.draft.gentle_enabled ? "" : "disabled"}>Test closing</button>
+            ${this.draft.gentle_enabled ? "" : `<span class="hint">Switch the gentle curtain on in the Room tab to test a curve.</span>`}
           </div>`;
   }
 
@@ -574,13 +576,15 @@ class GentleCoverPage extends HTMLElement {
     const d = this.draft;
     const r = this.draftRoom;
     const names = Object.fromEntries(this.coverChoices.map((c) => [c.entity_id, c.name]));
+    const shown = (name) => [r.title.trim(), (name || "").trim()].filter(Boolean).join(" ");
     const curtain = (key, label, hint) => `
             <div class="group">
               <div class="curtain-row">
                 <label class="check"><input type="checkbox" data-bool="${key}_enabled" ${d[`${key}_enabled`] ? "checked" : ""}> ${label}</label>
-                <input type="text" maxlength="64" data-text="${key}_name" value="${esc(d[`${key}_name`])}" ${d[`${key}_enabled`] ? "" : "disabled"}>
+                <input type="text" maxlength="64" data-text="${key}_name" value="${esc(d[`${key}_name`])}"
+                  placeholder="(just the room's name)" ${d[`${key}_enabled`] ? "" : "disabled"}>
               </div>
-              <span class="hint">${hint}</span>
+              <span class="hint">${hint} Shown as <strong data-shown="${key}">${esc(shown(d[`${key}_name`]))}</strong>.</span>
             </div>`;
     const enabled = [
       [d.normal_enabled, room?.normal_entity_id],
@@ -607,6 +611,7 @@ class GentleCoverPage extends HTMLElement {
             </div>
             ${curtain("normal", "Normal curtain", "Moves straight to where it is sent, all curtains together.")}
             ${curtain("gentle", "Gentle curtain", "Moves along the room's curves.")}
+            <span class="hint">Names come after the room's name, as Home Assistant shows every device's entities; renaming the room renames its curtains. The Home app then drops the room's name again for accessories in that room.</span>
             <div class="group">
               <span class="group-label">Scale</span>
               <div class="radios">
@@ -661,13 +666,21 @@ class GentleCoverPage extends HTMLElement {
       this.status = "";
       this.renderSaveState();
     };
+    const showNames = () => {
+      for (const key of ["normal", "gentle"]) {
+        const node = body.querySelector(`[data-shown="${key}"]`);
+        if (node) node.textContent = [this.draftRoom.title.trim(), (this.draft[`${key}_name`] || "").trim()].filter(Boolean).join(" ");
+      }
+    };
     body.querySelector("[data-room-title]")?.addEventListener("input", (event) => {
       this.draftRoom.title = event.target.value;
+      showNames();
       changed();
     });
     body.querySelectorAll("[data-text]").forEach((input) =>
       input.addEventListener("input", () => {
         this.draft[input.dataset.text] = input.value;
+        showNames();
         changed();
       }));
     body.querySelectorAll("[data-bool]").forEach((box) =>

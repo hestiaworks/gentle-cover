@@ -61,7 +61,7 @@ class OptionsTest(unittest.TestCase):
         d = options.defaults("Bedroom")
         self.assertEqual(
             (d["normal_enabled"], d["normal_name"], d["gentle_enabled"], d["gentle_name"], d["scale"]),
-            (True, "Bedroom", True, "Bedroom Sunrise", "open_is_100"),
+            (True, "", True, "Sunrise", "open_is_100"),
         )
 
     def test_migrate_room_settings(self):
@@ -69,7 +69,7 @@ class OptionsTest(unittest.TestCase):
         new = options.migrate_room_settings(old, "Living Room")
         self.assertEqual(
             (new["normal_enabled"], new["normal_name"], new["gentle_enabled"], new["gentle_name"], new["scale"]),
-            (False, "Living Room", True, "Living Room Gentle", "open_is_100"),
+            (False, "", True, "Gentle", "open_is_100"),
         )
         self.assertEqual(new["open_curve"], old["open_curve"])
 
@@ -77,12 +77,22 @@ class OptionsTest(unittest.TestCase):
         data = options.defaults("Bedroom")
         data["gentle_name"] = "  Sunrise  "
         self.assertEqual(options.validate_options(data)["gentle_name"], "Sunrise")
-        for key, value in (("gentle_name", " "), ("normal_name", "x" * 65), ("scale", "upside_down"),
-                           ("normal_enabled", "yes")):
+        for key, value in (("normal_name", "x" * 65), ("scale", "upside_down"),
+                           ("normal_enabled", "yes"), ("gentle_name", 7)):
             bad = options.defaults("Bedroom")
             bad[key] = value
             with self.assertRaises(ValueError, msg=key):
                 options.validate_options(bad)
+        # Names follow the room's name, so an empty one is just the room.
+        blank = options.defaults("Bedroom")
+        blank["gentle_name"] = "  "
+        blank["normal_name"] = "Curtains"
+        self.assertEqual(options.validate_options(blank)["gentle_name"], "")
+        for normal, gentle in (("", ""), ("Sunrise", "sunrise ")):
+            same = options.defaults("Bedroom")
+            same["normal_name"], same["gentle_name"] = normal, gentle
+            with self.assertRaises(ValueError, msg=(normal, gentle)):
+                options.validate_options(same)
         neither = options.defaults("Bedroom")
         neither["normal_enabled"] = neither["gentle_enabled"] = False
         with self.assertRaises(ValueError):

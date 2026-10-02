@@ -99,7 +99,10 @@ class RoomCover(CoverEntity):
     """What both curtains of a room share: the room, its real curtains, and
     a position that is theirs."""
 
-    _attr_has_entity_name = False
+    # Named like any entity of a device: the room's name, then the curtain's
+    # own (empty for none). Home Assistant builds friendly names this way for
+    # every entity with a device, so the curtains follow a renamed room.
+    _attr_has_entity_name = True
     _attr_device_class = CoverDeviceClass.CURTAIN
     _attr_supported_features = (
         CoverEntityFeature.OPEN
@@ -128,7 +131,7 @@ class RoomCover(CoverEntity):
     def __init__(self, entry: ConfigEntry) -> None:
         self._entry = entry
         self._covers: list[str] = list(entry.data[CONF_COVERS])
-        self._attr_name = self._option(self._name_key)
+        self._attr_name = self._option(self._name_key) or None
         # A device per room, carrying the room's name.
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
@@ -142,8 +145,8 @@ class RoomCover(CoverEntity):
         if key in DEFAULT_OPTIONS:
             return DEFAULT_OPTIONS[key]
         return {
-            CONF_NORMAL_NAME: self._entry.title,
-            CONF_GENTLE_NAME: f"{self._entry.title} Gentle",
+            CONF_NORMAL_NAME: "",
+            CONF_GENTLE_NAME: "Gentle",
             CONF_SCALE: SCALE_OPEN_IS_100,
         }.get(key)
 

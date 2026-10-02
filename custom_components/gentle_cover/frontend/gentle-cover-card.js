@@ -50,12 +50,15 @@ const interpolator = (points) => {
   };
 };
 
+/** A position as the room counts it; the curtains always say 100 = open. */
+const inScale = (position, scale) => (scale === "closed_is_100" ? 100 - position : position);
+
 const esc = (text) =>
   String(text ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
 class GentleCoverCard extends HTMLElement {
   setConfig(config) {
-    if (!config || !config.entity) throw new Error("Choose a gentle curtain (entity)");
+    if (!config || !config.entity) throw new Error("Choose a Gentle Cover curtain (entity)");
     this.config = config;
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
     this.render();
@@ -100,7 +103,7 @@ class GentleCoverCard extends HTMLElement {
       // An unavailable entity carries no attributes, curves included.
       body = `<div class="message">Unavailable — the curtains are not reporting a position</div>`;
     } else if (!Array.isArray(state.attributes.open_curve)) {
-      body = `<div class="message">${esc(this.config.entity)} is not a gentle curtain</div>`;
+      body = `<div class="message">${esc(this.config.entity)} is not a Gentle Cover curtain</div>`;
     } else {
       body = this.chart(state);
     }
@@ -119,9 +122,16 @@ class GentleCoverCard extends HTMLElement {
     </style>
     <ha-card>
       <div class="head"><span class="name">${esc(name)}</span>
-        <span class="position">${state && state.attributes.current_position !== undefined ? `${state.attributes.current_position} %` : ""}</span></div>
+        <span class="position">${this.positionText(state)}</span></div>
       ${body}
     </ha-card>`;
+  }
+
+  positionText(state) {
+    const position = state?.attributes?.current_position;
+    if (position === undefined) return "";
+    const scale = state.attributes.scale;
+    return `${Math.round(inScale(position, scale))} %${scale === "closed_is_100" ? " closed" : ""}`;
   }
 
   chart(state) {
@@ -147,7 +157,8 @@ class GentleCoverCard extends HTMLElement {
       const t = a.move_curve_start + (a.move_curve_end - a.move_curve_start) * share;
       marker = `<circle class="marker" cx="${xOf(t).toFixed(1)}" cy="${yOf(at(t)).toFixed(1)}" r="6"></circle>`;
       const left = Math.max(0, Math.ceil((a.move_span_s - elapsed) / 60));
-      status = `${direction === "close" ? "Closing" : "Opening"} to ${a.target_position} % · ${left} min left`;
+      const target = Math.round(inScale(a.target_position, a.scale));
+      status = `${direction === "close" ? "Closing" : "Opening"} to ${target} %${a.scale === "closed_is_100" ? " closed" : ""} · ${left} min left`;
     }
     return `<svg viewBox="0 0 ${W} ${H}">${grid}${now}<path class="curve" d="${path}"></path>${marker}</svg>
       ${status ? `<div class="status">${esc(status)}</div>` : ""}`;
@@ -160,6 +171,6 @@ if (!customElements.get("gentle-cover-card")) {
   window.customCards.push({
     type: "gentle-cover-card",
     name: "Gentle Cover",
-    description: "A room's opening or closing curve, and where a gentle move is on it.",
+    description: "A Gentle Cover room's curve and position, and where a gentle move is on it.",
   });
 }

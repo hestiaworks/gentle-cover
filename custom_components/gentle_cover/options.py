@@ -112,6 +112,30 @@ def migrate_room_covers(options: dict[str, Any], covers: list[str]) -> dict[str,
     return new
 
 
+def migrate_entry_options(
+    minor_version: int, options: dict[str, Any], title: str, covers: list[str]
+) -> dict[str, Any]:
+    """Bring a room's options from any earlier minor version to the current
+    one, each step only where it is needed."""
+    if minor_version >= 4:
+        return options
+    if minor_version < 2:
+        options = migrate_options(options)
+    if minor_version < 3:
+        options = migrate_room_settings(options, title)
+    return migrate_room_covers(options, covers)
+
+
+def own_curtains_wanted(covers: list[str], individual: dict[str, Any]) -> list[str]:
+    """The room's real curtains that are switched on as curtains of their own,
+    in the room's order; one that has left the room is not."""
+    return [
+        entity_id
+        for entity_id in covers
+        if isinstance(individual.get(entity_id), dict) and individual[entity_id].get("enabled")
+    ]
+
+
 def default_own_name(curtain_name: str, room_title: str) -> str:
     """A real curtain's name without the room's name in front.
 

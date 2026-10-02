@@ -56,7 +56,7 @@ from .const import (
 )
 from .curve import CLOSE, OPEN, Curve
 from .mover import GentleMove, member_position
-from .options import from_room_scale
+from .options import from_room_scale, own_curtains_wanted
 from .planner import Plan, plan
 
 _LOGGER = logging.getLogger(__name__)
@@ -90,15 +90,9 @@ async def async_setup_entry(
         elif entity_id := registry.async_get_entity_id(COVER_DOMAIN, DOMAIN, unique_id):
             # Switched off: gone, not left behind as an unavailable entity.
             registry.async_remove(entity_id)
-    individual = entry.options.get(CONF_INDIVIDUAL, {})
-    wanted = {
-        own_unique_id(entry, entity_id)
-        for entity_id, own in individual.items()
-        if own.get("enabled") and entity_id in entry.data[CONF_COVERS]
-    }
-    for entity_id in entry.data[CONF_COVERS]:
-        if own_unique_id(entry, entity_id) in wanted:
-            entities.append(OwnCover(entry, entity_id))
+    own = own_curtains_wanted(entry.data[CONF_COVERS], entry.options.get(CONF_INDIVIDUAL, {}))
+    entities.extend(OwnCover(entry, entity_id) for entity_id in own)
+    wanted = {own_unique_id(entry, entity_id) for entity_id in own}
     prefix = f"{entry.entry_id}_own_"
     for registered in er.async_entries_for_config_entry(registry, entry.entry_id):
         if registered.unique_id.startswith(prefix) and registered.unique_id not in wanted:

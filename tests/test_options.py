@@ -190,6 +190,31 @@ class OptionsTest(unittest.TestCase):
         self.assertEqual(options.default_own_name("Office Blind", "Bedroom"), "Office Blind")
         self.assertEqual(options.default_own_name("Bedroom", "Bedroom"), "Bedroom")
 
+    def test_migrate_entry_options_from_every_version(self):
+        covers = ["cover.l", "cover.r"]
+        v1 = {"open_duration": 15.0, "open_easing": "even", "min_step": 5.0}
+        from_1 = options.migrate_entry_options(1, v1, "Living Room", covers)
+        from_2 = options.migrate_entry_options(2, options.migrate_options(v1), "Living Room", covers)
+        from_3 = options.migrate_entry_options(
+            3, options.migrate_room_settings(options.migrate_options(v1), "Living Room"), "Living Room", covers)
+        self.assertEqual(from_1, from_2)
+        self.assertEqual(from_2, from_3)
+        self.assertEqual(from_1["open_curve"], PRESETS[OPEN]["even"])
+        self.assertEqual(from_1["open_duration"], 15.0)
+        self.assertEqual((from_1["normal_enabled"], from_1["gentle_name"]), (False, "Gentle"))
+        self.assertEqual((from_1["normal_covers"], from_1["gentle_covers"], from_1["individual"]),
+                         (covers, covers, {}))
+        # Already current: untouched.
+        current = options.defaults("Bedroom", covers)
+        self.assertEqual(options.migrate_entry_options(4, current, "Bedroom", covers), current)
+
+    def test_own_curtains_wanted(self):
+        covers = ["cover.l", "cover.r"]
+        individual = {"cover.l": {"enabled": True, "name": "L"}, "cover.r": {"enabled": False, "name": "R"},
+                      "cover.gone": {"enabled": True, "name": "G"}}
+        self.assertEqual(options.own_curtains_wanted(covers, individual), ["cover.l"])
+        self.assertEqual(options.own_curtains_wanted(covers, {}), [])
+
 
 if __name__ == "__main__":
     unittest.main()

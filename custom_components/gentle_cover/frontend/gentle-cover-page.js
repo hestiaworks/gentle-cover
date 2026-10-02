@@ -736,10 +736,11 @@ class GentleCoverPage extends HTMLElement {
       box.addEventListener("change", () => {
         const key = box.dataset.bool;
         const other = key === "normal_enabled" ? "gentle_enabled" : "normal_enabled";
-        if (!box.checked && !this.draft[other]) {
-          // A room with neither curtain would have nothing to show.
+        const ownOn = Object.values(this.draft.individual || {}).some((own) => own.enabled);
+        if (!box.checked && !this.draft[other] && !ownOn) {
+          // A room with no curtain at all would have nothing to show.
           box.checked = true;
-          this.error = "A room needs at least one curtain; switch the other one on first.";
+          this.error = "A room needs at least one curtain; switch another one on first.";
           this.renderNotice();
           return;
         }

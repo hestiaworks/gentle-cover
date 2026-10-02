@@ -12,9 +12,12 @@ room is still dark, bigger ones once your eyes have caught up.
 
 Each room can have two curtains, both named by you and both optional:
 
-- a **normal** curtain that moves straight to where it is sent, all the room's
+- a **normal** curtain that moves straight to where it is sent, all its
   curtains in one command;
 - a **gentle** curtain that moves along the room's curves.
+
+You choose which of the room's real curtains each of them moves, and any real
+curtain can also be offered **on its own** as a full-speed curtain.
 
 Together they can replace the room's individual curtains on your dashboards,
 in automations and in HomeKit.
@@ -87,13 +90,15 @@ never edited in two places.
   only the first goes out at once, so you can see the move has started.
 - A new command replaces the running move. **Stop** ends it; the curtains
   finish their current short run.
-- **Hands off**: if anyone moves a real curtain during a gentle move — from
-  Home Assistant, HomeKit, a voice command for the room, the curtain's own
-  button or the vendor app — the gentle move stops instead of fighting them.
+- **Hands off**: if anyone moves one of the curtains a gentle move is driving —
+  from Home Assistant, HomeKit, a voice command for the room, the curtain's
+  own button or the vendor app — the gentle move stops instead of fighting
+  them. Curtains the gentle curtain does not move can be used freely during it.
 - A restart of Home Assistant ends a move where it was; nothing is resumed.
 
-The normal curtain is an ordinary cover. A command on it during a gentle move
-stops the gentle move, like any other hands-off.
+The normal curtain and the curtains offered on their own are ordinary covers.
+A command on one of them during a gentle move stops the gentle move if it
+moves one of the same real curtains, like any other hands-off.
 
 To use a different duration for one gentle move, call the action (`position`
 in the room's scale):
@@ -114,7 +119,8 @@ type: custom:gentle-cover-card
 entity: cover.bedroom_curtains_gentle
 ```
 
-It takes either of a room's curtains and draws the room's curve and current
+It takes any of a room's curtains — normal, gentle or one on its own — and
+draws the room's curve and current
 position in the room's scale, and during a gentle move a marker travelling
 along the curve with the time left. It is read-only; it is also in the card
 picker.

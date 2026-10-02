@@ -16,7 +16,7 @@ from homeassistant.helpers.typing import ConfigType
 from . import websocket
 from .const import DOMAIN
 from .const import CONF_COVERS
-from .options import migrate_options, migrate_room_covers, migrate_room_settings
+from .options import migrate_entry_options
 from .page import async_setup_page
 
 PLATFORMS = [Platform.COVER]
@@ -53,11 +53,8 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         return False
     if entry.minor_version >= 4:
         return True
-    options = dict(entry.options)
-    if entry.minor_version < 2:
-        options = migrate_options(options)
-    if entry.minor_version < 3:
-        options = migrate_room_settings(options, entry.title)
-    options = migrate_room_covers(options, list(entry.data.get(CONF_COVERS, [])))
+    options = migrate_entry_options(
+        entry.minor_version, dict(entry.options), entry.title, list(entry.data.get(CONF_COVERS, []))
+    )
     hass.config_entries.async_update_entry(entry, options=options, minor_version=4)
     return True

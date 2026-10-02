@@ -14,21 +14,38 @@ from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 
+from .config_flow import describe_cover, taken_titles
 from .const import CONF_COVERS, DOMAIN
+from .cover import gentle_unique_id, normal_unique_id
 from .curve import CLOSE, OPEN, PRESETS, Curve
-from .options import validate_options
+from .options import validate_covers, validate_options, validate_title
 from .planner import preview
 
 
 def _room(hass: HomeAssistant, entry: Any) -> dict[str, Any]:
-    entity_id = er.async_get(hass).async_get_entity_id("cover", DOMAIN, entry.entry_id)
+    registry = er.async_get(hass)
+    normal = registry.async_get_entity_id("cover", DOMAIN, normal_unique_id(entry))
+    gentle = registry.async_get_entity_id("cover", DOMAIN, gentle_unique_id(entry))
     return {
         "entry_id": entry.entry_id,
         "title": entry.title,
-        "entity_id": entity_id,
+        "normal_entity_id": normal,
+        "gentle_entity_id": gentle,
+        # The one the page shows a position for and runs Test on.
+        "entity_id": gentle or normal,
         "covers": list(entry.data.get(CONF_COVERS, [])),
         "options": dict(entry.options),
     }
+
+
+def _cover_choices(hass: HomeAssistant) -> list[dict[str, str]]:
+    """Curtains a room could use: real ones that take a position."""
+    choices = [
+        {"entity_id": state.entity_id, "name": state.name}
+        for state in hass.states.async_all("cover")
+        if describe_cover(hass, state.entity_id) == "ok"
+    ]
+    return sorted(choices, key=lambda choice: choice["name"].casefold())
 
 
 @websocket_api.require_admin
@@ -39,7 +56,9 @@ def ws_rooms(
 ) -> None:
     rooms = [_room(hass, entry) for entry in hass.config_entries.async_entries(DOMAIN)]
     # The presets come from here so the page and the migration share them.
-    connection.send_result(msg["id"], {"rooms": rooms, "presets": PRESETS})
+    connection.send_result(
+        msg["id"], {"rooms": rooms, "presets": PRESETS, "cover_choices": _cover_choices(hass)}
+    )
 
 
 @websocket_api.require_admin
@@ -75,6 +94,8 @@ def ws_preview(
         vol.Required("type"): "gentle_cover/save",
         vol.Required("entry_id"): str,
         vol.Required("options"): dict,
+        vol.Optional("title"): str,
+        vol.Optional("covers"): list,
     }
 )
 @callback
@@ -87,13 +108,25 @@ def ws_save(
         return
     try:
         options = validate_options(msg["options"])
+        title = validate_title(
+            msg.get("title", entry.title), taken_titles(hass, except_entry_id=entry.entry_id)
+        )
+        covers = validate_covers(
+            msg.get("covers", list(entry.data.get(CONF_COVERS, []))),
+            lambda entity_id: describe_cover(hass, entity_id),
+        )
     except ValueError as err:
         connection.send_error(msg["id"], "invalid_options", str(err))
         return
     # Saving reloads the room (its update listener), which also drops a move
-    # planned under the old settings.
-    hass.config_entries.async_update_entry(entry, options=options)
-    connection.send_result(msg["id"], {"options": options})
+    # planned under the old settings and creates or removes its curtains.
+    hass.config_entries.async_update_entry(
+        entry,
+        title=title,
+        data={**entry.data, CONF_COVERS: covers},
+        options=options,
+    )
+    connection.send_result(msg["id"], {"title": title, "covers": covers, "options": options})
 
 
 @callback

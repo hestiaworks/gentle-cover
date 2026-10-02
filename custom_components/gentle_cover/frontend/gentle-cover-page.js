@@ -124,6 +124,24 @@ input {
 .empty { padding:48px 16px; text-align:center; color:var(--muted); line-height:1.6; }
 .empty a { color:var(--accent-ink); }
 .mono { font-family:var(--mono); }
+input[aria-invalid="true"] { border-color:var(--danger); }
+.hint { font:400 12px/1.5 var(--font); color:var(--muted); }
+.room-form { display:flex; flex-direction:column; gap:20px; }
+.room-form .group { display:flex; flex-direction:column; gap:8px; }
+.chips { display:flex; flex-wrap:wrap; gap:8px; }
+.chip { display:inline-flex; align-items:center; gap:6px; height:var(--control-sm); padding:0 4px 0 10px;
+  border:1px solid var(--line); background:var(--surface-raised); font:500 12px/1 var(--mono); }
+.chip button { height:22px; width:22px; padding:0; border:0; background:transparent; color:var(--muted); }
+.chip button:hover { color:var(--ink); background:transparent; }
+.add-row { display:flex; gap:8px; }
+.curtain-row { display:grid; grid-template-columns:auto minmax(0,1fr); gap:12px; align-items:center; }
+.check { display:flex; align-items:center; gap:10px; font:600 14px/1 var(--font); cursor:pointer; white-space:nowrap; }
+.check input { appearance:none; width:16px; height:16px; margin:0; border:1px solid var(--disabled); border-radius:var(--radius); background:transparent; cursor:pointer; flex:none; padding:0; }
+.check input:checked { background:var(--accent); border-color:var(--accent); }
+.check input[type=radio] { border-radius:50%; }
+.check input[type=radio]:checked { border:4px solid var(--accent); background:transparent; }
+.radios { display:flex; flex-wrap:wrap; gap:20px; }
+pre.homekit { margin:0; padding:12px 16px; border:1px solid var(--line); background:var(--canvas); font:500 12px/1.6 var(--mono); overflow-x:auto; }
 
 /* chart marks */
 .grid line { stroke:var(--line); stroke-width:1; }
@@ -154,7 +172,15 @@ const KEYS = {
   close: { curve: "close_curve", duration: "close_duration", label: "Closing" },
 };
 const PRESET_LABELS = { slow_start: "Slow start", even: "Even", hold_then_open: "Hold then open" };
-const OPTION_KEYS = ["open_duration", "close_duration", "open_curve", "close_curve", "step_interval", "min_step"];
+const OPTION_KEYS = [
+  "open_duration", "close_duration", "open_curve", "close_curve", "step_interval", "min_step",
+  "normal_enabled", "normal_name", "gentle_enabled", "gentle_name", "scale",
+];
+const TABS = [["open", "Opening"], ["close", "Closing"], ["room", "Room"]];
+const NUMBER_FIELDS = { open_duration: [1, 120], close_duration: [1, 120], step_interval: [30, 600], min_step: [1, 50] };
+
+/** A position as the room counts it; the curtains always say 100 = open. */
+const inScale = (position, scale) => (scale === "closed_is_100" ? 100 - position : position);
 
 const esc = (text) =>
   String(text ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -174,7 +200,9 @@ const normalise = (options) => {
   const result = {};
   for (const key of OPTION_KEYS) {
     const value = options[key];
-    result[key] = Array.isArray(value) ? value.map(([t, p]) => [Number(t), Number(p)]) : Number(value);
+    if (Array.isArray(value)) result[key] = value.map(([t, p]) => [Number(t), Number(p)]);
+    else if (key in NUMBER_FIELDS) result[key] = Number(value);
+    else result[key] = value;
   }
   return result;
 };
@@ -191,7 +219,9 @@ class GentleCoverPage extends HTMLElement {
     this.saved = null;
     this.point = null;
     this.preview = null;
-    this.previewSeq = 0;
+    this.draftRoom = null;
+    this.savedRoom = null;
+    this.coverChoices = [];
     this.previewBusy = false;
     this.previewAgain = false;
     this.error = "";
@@ -235,6 +265,7 @@ class GentleCoverPage extends HTMLElement {
       const result = await this.call({ type: "gentle_cover/rooms" });
       this.rooms = result.rooms;
       this.presets = result.presets;
+      this.coverChoices = result.cover_choices || [];
       this.loaded = true;
       this.error = "";
       const keep = this.rooms.find((room) => room.entry_id === this.selected);
@@ -250,8 +281,11 @@ class GentleCoverPage extends HTMLElement {
   room() { return this.rooms.find((room) => room.entry_id === this.selected) || null; }
 
   dirty() {
-    return Boolean(this.draft && this.saved && JSON.stringify(this.draft) !== JSON.stringify(this.saved));
+    if (!this.draft || !this.saved) return false;
+    return JSON.stringify([this.draft, this.draftRoom]) !== JSON.stringify([this.saved, this.savedRoom]);
   }
+
+  scale() { return this.draft?.scale || "open_is_100"; }
 
   selectRoom(entryId, force = false) {
     if (!force && entryId === this.selected) return;
@@ -260,6 +294,9 @@ class GentleCoverPage extends HTMLElement {
     const room = this.room();
     this.saved = room ? normalise(room.options) : null;
     this.draft = this.saved ? structuredClone(this.saved) : null;
+    this.savedRoom = room ? { title: room.title, covers: [...room.covers] } : null;
+    this.draftRoom = this.savedRoom ? structuredClone(this.savedRoom) : null;
+    this.preview = null;
     this.point = null;
     this.status = "";
     this.renderBody();
@@ -268,6 +305,7 @@ class GentleCoverPage extends HTMLElement {
 
   selectTab(tab) {
     this.tab = tab;
+    this.preview = null;
     this.point = null;
     this.renderBody();
     this.requestPreview();
@@ -289,14 +327,20 @@ class GentleCoverPage extends HTMLElement {
 
   // --- preview: one request in flight, the latest wins ----------------------
 
+  /** The preview of what is on screen, or none. */
+  shownPreview() {
+    const preview = this.preview;
+    return preview && preview.entry === this.selected && preview.tab === this.tab ? preview : null;
+  }
+
   async requestPreview() {
-    if (!this.draft) return;
+    if (!this.draft || this.tab === "room") return;
     if (this.previewBusy) {
       this.previewAgain = true;
       return;
     }
     this.previewBusy = true;
-    const seq = ++this.previewSeq;
+    const asked = { entry: this.selected, tab: this.tab };
     try {
       const result = await this.call({
         type: "gentle_cover/preview",
@@ -306,10 +350,8 @@ class GentleCoverPage extends HTMLElement {
         step_interval: this.draft.step_interval,
         min_step: this.draft.min_step,
       });
-      if (seq === this.previewSeq) {
-        this.preview = { tab: this.tab, ...result };
-        this.error = "";
-      }
+      this.preview = { ...asked, ...result };
+      this.error = "";
     } catch (err) {
       this.preview = null;
       this.error = err?.message || "Could not plan this curve";
@@ -331,12 +373,24 @@ class GentleCoverPage extends HTMLElement {
     const room = this.room();
     if (!room) return false;
     try {
-      const result = await this.call({ type: "gentle_cover/save", entry_id: room.entry_id, options: this.draft });
+      const result = await this.call({
+        type: "gentle_cover/save",
+        entry_id: room.entry_id,
+        options: this.draft,
+        title: this.draftRoom.title,
+        covers: this.draftRoom.covers,
+      });
       room.options = result.options;
+      room.title = result.title;
+      room.covers = result.covers;
       this.saved = normalise(result.options);
       this.draft = structuredClone(this.saved);
+      this.savedRoom = { title: result.title, covers: [...result.covers] };
+      this.draftRoom = structuredClone(this.savedRoom);
       this.error = "";
       this.status = "Saved";
+      // Curtains switched on or off change the room's entities.
+      setTimeout(() => this.reloadRooms(), 1500);
       this.renderSaveState();
       this.renderNotice();
       return true;
@@ -344,6 +398,20 @@ class GentleCoverPage extends HTMLElement {
       this.error = err?.message || "Could not save";
       this.renderNotice();
       return false;
+    }
+  }
+
+  async reloadRooms() {
+    try {
+      const result = await this.call({ type: "gentle_cover/rooms" });
+      this.rooms = result.rooms;
+      this.coverChoices = result.cover_choices || [];
+      if (!this.dirty()) {
+        const keep = this.rooms.find((room) => room.entry_id === this.selected);
+        if (keep) this.selectRoom(keep.entry_id, true);
+      }
+    } catch (err) {
+      // The next load will try again; nothing on screen is wrong meanwhile.
     }
   }
 
@@ -356,7 +424,7 @@ class GentleCoverPage extends HTMLElement {
       // lost with the old entity.
       this.status = "Applying the new settings…";
       this.renderSaveState();
-      if (!(await this.waitForReload(room))) {
+      if (!(await this.waitForReload(this.room()))) {
         this.error = "The room did not come back after saving; try Test again.";
         this.renderNotice();
         return;
@@ -377,6 +445,7 @@ class GentleCoverPage extends HTMLElement {
 
   /** Until the room's entity carries the saved curves, or ten seconds pass. */
   async waitForReload(room) {
+    if (!room?.entity_id) return false;
     const want = JSON.stringify([this.saved.open_curve, this.saved.close_curve]);
     for (let i = 0; i < 50; i++) {
       const state = this._hass?.states[room.entity_id];
@@ -511,7 +580,7 @@ class GentleCoverPage extends HTMLElement {
                 <label class="check"><input type="checkbox" data-bool="${key}_enabled" ${d[`${key}_enabled`] ? "checked" : ""}> ${label}</label>
                 <input type="text" maxlength="64" data-text="${key}_name" value="${esc(d[`${key}_name`])}" ${d[`${key}_enabled`] ? "" : "disabled"}>
               </div>
-              <span class="hint field">${hint}</span>
+              <span class="hint">${hint}</span>
             </div>`;
     const enabled = [
       [d.normal_enabled, room?.normal_entity_id],
@@ -525,7 +594,7 @@ class GentleCoverPage extends HTMLElement {
               <span class="group-label">Curtains</span>
               <div class="chips">
                 ${r.covers.map((id, i) => `<span class="chip" title="${esc(id)}">${esc(names[id] || id)}
-                  <button data-uncover="${i}" title="Remove ${esc(id)}">✕</button></span>`).join("") || `<span class="hint field">No curtains yet.</span>`}
+                  <button data-uncover="${i}" title="Remove ${esc(id)}">✕</button></span>`).join("") || `<span class="hint">No curtains yet.</span>`}
               </div>
               <div class="add-row">
                 <input type="text" list="cover-choices" data-cover-input placeholder="cover.bedroom_curtains_left">
@@ -544,11 +613,11 @@ class GentleCoverPage extends HTMLElement {
                 <label class="check"><input type="radio" name="scale" value="open_is_100" ${d.scale !== "closed_is_100" ? "checked" : ""}> 100 % = open</label>
                 <label class="check"><input type="radio" name="scale" value="closed_is_100" ${d.scale === "closed_is_100" ? "checked" : ""}> 100 % = closed</label>
               </div>
-              <span class="hint field">How this page, the card and the gentle_cover.move action count. Home Assistant and HomeKit always use 100 % = open.</span>
+              <span class="hint">How this page, the card and the gentle_cover.move action count. Home Assistant and HomeKit always use 100 % = open.</span>
             </div>
             <div class="group">
               <span class="group-label">HomeKit</span>
-              <span class="hint field">To show these curtains in the Home app, add them under <span class="mono">homekit: filter: include_entities:</span> in configuration.yaml and restart.</span>
+              <span class="hint">To show these curtains in the Home app, add them under <span class="mono">homekit: filter: include_entities:</span> in configuration.yaml and restart.</span>
               <pre class="homekit" data-homekit>${esc(enabled.join("\n"))}</pre>
               <div><button class="small" data-copy-homekit>Copy</button></div>
             </div>
@@ -672,7 +741,7 @@ class GentleCoverPage extends HTMLElement {
   renderSummary() {
     const node = this.shadowRoot.querySelector("[data-summary]");
     if (!node) return;
-    const preview = this.preview?.tab === this.tab ? this.preview : null;
+    const preview = this.shownPreview();
     if (!preview) {
       node.textContent = "Planning…";
       return;
@@ -690,7 +759,7 @@ class GentleCoverPage extends HTMLElement {
     if (!host || !this.draft) return;
     const points = this.curve();
     const durationMin = this.draft[KEYS[this.tab].duration];
-    const preview = this.preview?.tab === this.tab ? this.preview : null;
+    const preview = this.shownPreview();
 
     const tick = [1, 2, 5, 10, 15, 30].find((step) => durationMin / step <= 10) || 60;
     const xTicks = [];
@@ -842,7 +911,7 @@ class GentleCoverPage extends HTMLElement {
     if (at - before[0] < 0.01 || after[0] - at < 0.01) return;
     // The new point sits on the curve as drawn, so adding one changes nothing
     // until it is moved.
-    const samples = this.preview?.tab === this.tab ? this.preview.samples : null;
+    const samples = this.shownPreview()?.samples || null;
     let p = before[1] + ((after[1] - before[1]) * (at - before[0])) / (after[0] - before[0]);
     if (samples) {
       const k = clamp(Math.floor(at * 100), 0, 99);

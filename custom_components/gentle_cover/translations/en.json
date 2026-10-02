@@ -9,7 +9,7 @@
           "covers": "Curtains"
         },
         "data_description": {
-          "name": "For example \"Bedroom Curtains\". The gentle curtain becomes cover.<room>_gentle.",
+          "name": "For example \"Bedroom Curtains\". Its gentle curtain becomes cover.bedroom_curtains_gentle.",
           "covers": "The real curtains of this room. They must report and accept a position."
         }
       }

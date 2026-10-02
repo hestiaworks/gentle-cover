@@ -78,7 +78,6 @@ class PlanTest(unittest.TestCase):
                 self.assertGreaterEqual(abs(position - previous), 8)
                 previous = position
             self.assertEqual(steps[-1][1], target)
-            self.assertEqual(steps[0][0], 0.0)
 
     def test_commands_never_run_ahead_of_the_curve(self):
         for direction, name, start, target in (
@@ -94,6 +93,16 @@ class PlanTest(unittest.TestCase):
 
     def test_full_travel_ends_at_the_full_duration(self):
         self.assertEqual(plan(0, 100, make(OPEN, "slow_start"), 1200, 5).steps[-1], (1200.0, 100))
+
+    def test_first_command_waits_out_a_hold(self):
+        c = make(OPEN, "hold_then_open")
+        result = plan(8, 100, c, 1200, 5)
+        self.assertGreater(result.steps[0][0], 0.0)
+        for at, position in result.steps:
+            self.assertGreaterEqual(c.at(result.t_start + at / 1200) - position, -0.5, (at, position))
+
+    def test_first_command_still_at_once_on_a_slow_start(self):
+        self.assertEqual(plan(0, 100, make(OPEN, "slow_start"), 1200, 5).steps[0], (0.0, 6))
 
     def test_preview_full_travel(self):
         result = preview(make(CLOSE, "even"), 600, 5, 150)

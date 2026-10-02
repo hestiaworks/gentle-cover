@@ -52,6 +52,8 @@ class CurveTest(unittest.TestCase):
             [[0, 0], [0.5, 60], [0.5, 70], [1, 100]],  # time not increasing
             [[0, 0], [0.5, 60], [0.7, 40], [1, 100]],  # backwards
             [[0, 0], [0.5, 120], [1, 100]],            # out of range
+            [[0, 0], [None, 50], [1, 100]],            # not a number
+            [[0, 0], ["x", 50], [1, 100]],             # not a number
         ]
         for points in bad:
             with self.assertRaises(ValueError, msg=points):

@@ -34,7 +34,10 @@ def validate_curve(points: object, direction: str) -> list[list[float]]:
     for point in points:
         if not isinstance(point, (list, tuple)) or len(point) != 2:
             raise ValueError("each point is [time, position]")
-        t, position = float(point[0]), float(point[1])
+        try:
+            t, position = float(point[0]), float(point[1])
+        except (TypeError, ValueError) as err:
+            raise ValueError("time and position must be numbers") from err
         if not (0 <= t <= 1 and 0 <= position <= 100):
             raise ValueError("time is 0..1 and position 0..100")
         cleaned.append([t, position])

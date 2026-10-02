@@ -36,8 +36,9 @@ def plan(
     min_step merges with the ones after it — tiny moves are what this motor
     does worst. Each command is sent when the curve reaches its position, so
     a hold keeps its length and the last command lands exactly on target at
-    the end of the span; only the first is sent at once, so the move visibly
-    starts.
+    the end of the span. The first is sent at once, so the move visibly
+    starts — if the curve reaches it within two intervals; one it only
+    reaches after a hold waits for it like the rest.
     """
     start = round(start)
     target = round(target)
@@ -61,8 +62,13 @@ def plan(
             position = min(high, max(low, position))
             if abs(position - last) < min_step:
                 continue
-        # Except the first, which goes out at once so the move visibly starts.
-        steps.append((0.0 if not steps else round(at, 1), position))
+        # The first goes out at once so the move visibly starts — unless the
+        # curve only gets there after a hold, which an early jump would skip.
+        if not steps:
+            sent = 0.0 if at <= 2 * span / count else round(at, 1)
+        else:
+            sent = round(at, 1)
+        steps.append((sent, position))
         last = position
     return Plan(steps, t_start, t_end, span)
 

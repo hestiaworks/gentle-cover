@@ -9,13 +9,19 @@
           "covers": "Curtains"
         },
         "data_description": {
-          "name": "For example \"Bedroom Curtains\". Its gentle curtain becomes cover.bedroom_curtains_gentle.",
+          "name": "For example \"Bedroom\". It names the room's curtains; you can rename them on the Gentle Cover page.",
           "covers": "The real curtains of this room. They must report and accept a position."
         }
       }
     },
     "error": {
-      "own_entity": "That is already a gentle curtain. Choose the real curtains."
+      "own_entity": "That is already a gentle curtain. Choose the real curtains.",
+      "no_covers": "Choose at least one curtain.",
+      "missing_cover": "One of the chosen curtains does not exist.",
+      "no_position": "One of the chosen curtains cannot be set to a position; Gentle Cover needs curtains that report and accept a position.",
+      "name_taken": "There is already a room with that name.",
+      "no_name": "Give the room a name.",
+      "name_too_long": "A room name is at most 64 characters."
     }
   },
   "options": {
@@ -33,7 +39,7 @@
       "fields": {
         "position": {
           "name": "Position",
-          "description": "Target position, 0 is closed and 100 is open."
+          "description": "Target position in the room's scale (by default 0 is closed and 100 is open)."
         },
         "duration": {
           "name": "Duration",

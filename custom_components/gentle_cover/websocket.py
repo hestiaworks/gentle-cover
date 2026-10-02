@@ -16,7 +16,7 @@ from homeassistant.helpers import entity_registry as er
 
 from .config_flow import describe_cover, taken_titles
 from .const import CONF_COVERS, DOMAIN
-from .cover import gentle_unique_id, normal_unique_id
+from .cover import gentle_unique_id, normal_unique_id, own_unique_id
 from .curve import CLOSE, OPEN, PRESETS, Curve
 from .options import validate_covers, validate_options, validate_title
 from .planner import preview
@@ -31,6 +31,11 @@ def _room(hass: HomeAssistant, entry: Any) -> dict[str, Any]:
         "title": entry.title,
         "normal_entity_id": normal,
         "gentle_entity_id": gentle,
+        "own_entity_ids": {
+            entity_id: own
+            for entity_id in entry.data.get(CONF_COVERS, [])
+            if (own := registry.async_get_entity_id("cover", DOMAIN, own_unique_id(entry, entity_id)))
+        },
         # The one the page shows a position for and runs Test on.
         "entity_id": gentle or normal,
         "covers": list(entry.data.get(CONF_COVERS, [])),

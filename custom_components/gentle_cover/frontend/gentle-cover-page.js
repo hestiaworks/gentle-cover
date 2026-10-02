@@ -129,6 +129,15 @@ input[aria-invalid="true"] { border-color:var(--danger); }
 .room-form { display:flex; flex-direction:column; gap:20px; }
 .room-form .group { display:flex; flex-direction:column; gap:8px; }
 .chips { display:flex; flex-wrap:wrap; gap:8px; }
+.curtains { width:100%; border-collapse:collapse; border:1px solid var(--line); }
+.curtains th { font:600 11px/1 var(--font); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); text-align:left; padding:10px 12px; border-bottom:1px solid var(--line); }
+.curtains td { padding:8px 12px; border-top:1px solid var(--line); vertical-align:middle; }
+.curtains td.tick, .curtains th.tick { text-align:center; width:72px; }
+.curtains .real { font:600 14px/1.2 var(--font); }
+.curtains .real .sub { font:500 11px/1.4 var(--mono); color:var(--muted); }
+.curtains .own { display:flex; align-items:center; gap:8px; }
+.curtains .own input[type=text] { height:var(--control-sm); }
+.table-wrap { overflow-x:auto; }
 .chip { display:inline-flex; align-items:center; gap:6px; height:var(--control-sm); padding:0 4px 0 10px;
   border:1px solid var(--line); background:var(--surface-raised); font:500 12px/1 var(--mono); }
 .chip button { height:22px; width:22px; padding:0; border:0; background:transparent; color:var(--muted); }
@@ -175,9 +184,21 @@ const PRESET_LABELS = { slow_start: "Slow start", even: "Even", hold_then_open: 
 const OPTION_KEYS = [
   "open_duration", "close_duration", "open_curve", "close_curve", "step_interval", "min_step",
   "normal_enabled", "normal_name", "gentle_enabled", "gentle_name", "scale",
+  "normal_covers", "gentle_covers", "individual",
 ];
 const TABS = [["open", "Opening"], ["close", "Closing"], ["room", "Room"]];
 const NUMBER_FIELDS = { open_duration: [1, 120], close_duration: [1, 120], step_interval: [30, 600], min_step: [1, 50] };
+
+/** A real curtain's name without the room's name in front (as options.py). */
+const defaultOwnName = (curtainName, roomTitle) => {
+  const name = curtainName.trim();
+  const title = roomTitle.trim();
+  if (title && name.toLowerCase().startsWith(title.toLowerCase())) {
+    const rest = name.slice(title.length).trim();
+    if (rest) return rest;
+  }
+  return name;
+};
 
 /** A position as the room counts it; the curtains always say 100 = open. */
 const inScale = (position, scale) => (scale === "closed_is_100" ? 100 - position : position);
@@ -200,7 +221,9 @@ const normalise = (options) => {
   const result = {};
   for (const key of OPTION_KEYS) {
     const value = options[key];
-    if (Array.isArray(value)) result[key] = value.map(([t, p]) => [Number(t), Number(p)]);
+    if (key.endsWith("_curve")) result[key] = value.map(([t, p]) => [Number(t), Number(p)]);
+    else if (key === "individual") result[key] = structuredClone(value || {});
+    else if (Array.isArray(value)) result[key] = [...value];
     else if (key in NUMBER_FIELDS) result[key] = Number(value);
     else result[key] = value;
   }
@@ -293,6 +316,12 @@ class GentleCoverPage extends HTMLElement {
     this.selected = entryId;
     const room = this.room();
     this.saved = room ? normalise(room.options) : null;
+    if (this.saved) {
+      // Options saved before curtains were chosen move all of them.
+      this.saved.normal_covers = this.saved.normal_covers || [...room.covers];
+      this.saved.gentle_covers = this.saved.gentle_covers || [...room.covers];
+      this.saved.individual = this.saved.individual || {};
+    }
     this.draft = this.saved ? structuredClone(this.saved) : null;
     this.savedRoom = room ? { title: room.title, covers: [...room.covers] } : null;
     this.draftRoom = this.savedRoom ? structuredClone(this.savedRoom) : null;
@@ -586,20 +615,40 @@ class GentleCoverPage extends HTMLElement {
               </div>
               <span class="hint">${hint} Shown as <strong data-shown="${key}">${esc(shown(d[`${key}_name`]))}</strong>.</span>
             </div>`;
+    const own = room?.own_entity_ids || {};
     const enabled = [
       [d.normal_enabled, room?.normal_entity_id],
       [d.gentle_enabled, room?.gentle_entity_id],
+      ...r.covers.map((id) => [d.individual[id]?.enabled, own[id]]),
     ].filter(([on]) => on).map(([, id]) => `      - ${id || "(created when you save)"}`);
+    const realName = (id) => names[id] || this._hass?.states[id]?.attributes?.friendly_name || id;
     return `
           <div class="room-form">
             <label class="field"><span class="label">Room name</span>
               <input type="text" maxlength="64" data-room-title value="${esc(r.title)}"></label>
             <div class="group">
               <span class="group-label">Curtains</span>
-              <div class="chips">
-                ${r.covers.map((id, i) => `<span class="chip" title="${esc(id)}">${esc(names[id] || id)}
-                  <button data-uncover="${i}" title="Remove ${esc(id)}">✕</button></span>`).join("") || `<span class="hint">No curtains yet.</span>`}
-              </div>
+              ${r.covers.length ? `<div class="table-wrap"><table class="curtains">
+                <thead><tr><th>Real curtain</th><th class="tick">Normal</th><th class="tick">Gentle</th><th>On its own</th><th></th></tr></thead>
+                <tbody>
+                ${r.covers.map((id, i) => {
+                  const mine = d.individual[id] || { enabled: false, name: defaultOwnName(realName(id), r.title) };
+                  return `<tr>
+                    <td class="real">${esc(realName(id))}<div class="sub">${esc(id)}</div></td>
+                    <td class="tick"><label class="check" style="justify-content:center"><input type="checkbox" data-member="normal_covers" data-id="${esc(id)}"
+                      aria-label="Normal curtain moves ${esc(realName(id))}" ${d.normal_covers.includes(id) ? "checked" : ""}></label></td>
+                    <td class="tick"><label class="check" style="justify-content:center"><input type="checkbox" data-member="gentle_covers" data-id="${esc(id)}"
+                      aria-label="Gentle curtain moves ${esc(realName(id))}" ${d.gentle_covers.includes(id) ? "checked" : ""}></label></td>
+                    <td><div class="own"><label class="check"><input type="checkbox" data-own="${esc(id)}"
+                      aria-label="${esc(realName(id))} on its own" ${mine.enabled ? "checked" : ""}></label>
+                      <input type="text" maxlength="64" data-own-name="${esc(id)}" value="${esc(mine.name)}"
+                        placeholder="(just the room's name)" ${mine.enabled ? "" : "disabled"}></div></td>
+                    <td><button class="quiet small" data-uncover="${i}" title="Remove ${esc(id)} from the room">✕</button></td>
+                  </tr>`;
+                }).join("")}
+                </tbody></table></div>
+              <span class="hint">Normal and Gentle: which real curtains each of the room's curtains moves. On its own: a full-speed curtain for just that one, named after the room like the others.</span>`
+                : `<span class="hint">No curtains yet.</span>`}
               <div class="add-row">
                 <input type="text" list="cover-choices" data-cover-input placeholder="cover.bedroom_curtains_left">
                 <datalist id="cover-choices">
@@ -705,8 +754,34 @@ class GentleCoverPage extends HTMLElement {
       }));
     body.querySelectorAll("[data-uncover]").forEach((button) =>
       button.addEventListener("click", () => {
-        this.draftRoom.covers.splice(Number(button.dataset.uncover), 1);
+        const [id] = this.draftRoom.covers.splice(Number(button.dataset.uncover), 1);
+        // Gone from the room, gone from every choice that named it.
+        this.draft.normal_covers = this.draft.normal_covers.filter((c) => c !== id);
+        this.draft.gentle_covers = this.draft.gentle_covers.filter((c) => c !== id);
+        delete this.draft.individual[id];
         this.renderBody();
+      }));
+    body.querySelectorAll("[data-member]").forEach((box) =>
+      box.addEventListener("change", () => {
+        const key = box.dataset.member;
+        const id = box.dataset.id;
+        const list = this.draft[key].filter((c) => c !== id);
+        if (box.checked) list.push(id);
+        this.draft[key] = this.draftRoom.covers.filter((c) => list.includes(c));
+        changed();
+      }));
+    body.querySelectorAll("[data-own]").forEach((box) =>
+      box.addEventListener("change", () => {
+        const id = box.dataset.own;
+        const name = body.querySelector(`[data-own-name="${CSS.escape(id)}"]`)?.value ?? "";
+        this.draft.individual[id] = { enabled: box.checked, name };
+        this.renderBody();
+      }));
+    body.querySelectorAll("[data-own-name]").forEach((input) =>
+      input.addEventListener("input", () => {
+        const id = input.dataset.ownName;
+        this.draft.individual[id] = { enabled: Boolean(this.draft.individual[id]?.enabled), name: input.value };
+        changed();
       }));
     const add = () => {
       const input = body.querySelector("[data-cover-input]");
@@ -718,6 +793,9 @@ class GentleCoverPage extends HTMLElement {
         return;
       }
       this.draftRoom.covers.push(id);
+      // A new curtain moves with both of the room's curtains, like the rest.
+      this.draft.normal_covers = this.draftRoom.covers.filter((c) => c === id || this.draft.normal_covers.includes(c));
+      this.draft.gentle_covers = this.draftRoom.covers.filter((c) => c === id || this.draft.gentle_covers.includes(c));
       this.error = "";
       this.renderBody();
     };

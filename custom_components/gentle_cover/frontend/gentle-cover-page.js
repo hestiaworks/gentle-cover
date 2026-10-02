@@ -452,15 +452,30 @@ class GentleCoverPage extends HTMLElement {
             ${this.rooms.map((r) => `
               <div class="row ${r.entry_id === this.selected ? "selected" : ""}" data-room="${esc(r.entry_id)}" tabindex="0">
                 <div class="grow"><div class="name">${esc(r.title)}</div>
-                <div class="sub mono" data-live="${esc(r.entity_id || "")}"></div></div>
+                <div class="sub mono" data-live="${esc(r.entity_id || "")}" data-scale="${esc(r.entry_id === this.selected ? this.scale() : r.options.scale || "open_is_100")}"></div></div>
               </div>`).join("")}
           </div>
         </section>
         <section>
           <nav class="tabs">
-            ${Object.entries(KEYS).map(([key, value]) =>
-              `<button data-tab="${key}" class="${key === this.tab ? "active" : ""}">${value.label}</button>`).join("")}
+            ${TABS.map(([key, label]) =>
+              `<button data-tab="${key}" class="${key === this.tab ? "active" : ""}">${label}</button>`).join("")}
           </nav>
+          ${this.tab === "room" ? this.roomForm(room) : this.movementForm(room, keys, presets)}
+        </section>
+      </div>`;
+    this.bindBody(body);
+    if (this.tab !== "room") {
+      this.renderChart();
+      this.renderSummary();
+    }
+    this.renderNotice();
+    this.renderSaveState();
+    this.refreshLive();
+  }
+
+  movementForm(room, keys, presets) {
+    return `
           <div class="chart" data-chart></div>
           <div class="toolbar">
             <span class="label">Presets</span>
@@ -483,15 +498,61 @@ class GentleCoverPage extends HTMLElement {
           <div class="actions">
             <button data-test="open" ${room?.entity_id ? "" : "disabled"}>Test opening</button>
             <button data-test="close" ${room?.entity_id ? "" : "disabled"}>Test closing</button>
-          </div>
-        </section>
-      </div>`;
-    this.bindBody(body);
-    this.renderChart();
-    this.renderSummary();
-    this.renderNotice();
-    this.renderSaveState();
-    this.refreshLive();
+          </div>`;
+  }
+
+  roomForm(room) {
+    const d = this.draft;
+    const r = this.draftRoom;
+    const names = Object.fromEntries(this.coverChoices.map((c) => [c.entity_id, c.name]));
+    const curtain = (key, label, hint) => `
+            <div class="group">
+              <div class="curtain-row">
+                <label class="check"><input type="checkbox" data-bool="${key}_enabled" ${d[`${key}_enabled`] ? "checked" : ""}> ${label}</label>
+                <input type="text" maxlength="64" data-text="${key}_name" value="${esc(d[`${key}_name`])}" ${d[`${key}_enabled`] ? "" : "disabled"}>
+              </div>
+              <span class="hint field">${hint}</span>
+            </div>`;
+    const enabled = [
+      [d.normal_enabled, room?.normal_entity_id],
+      [d.gentle_enabled, room?.gentle_entity_id],
+    ].filter(([on]) => on).map(([, id]) => `      - ${id || "(created when you save)"}`);
+    return `
+          <div class="room-form">
+            <label class="field"><span class="label">Room name</span>
+              <input type="text" maxlength="64" data-room-title value="${esc(r.title)}"></label>
+            <div class="group">
+              <span class="group-label">Curtains</span>
+              <div class="chips">
+                ${r.covers.map((id, i) => `<span class="chip" title="${esc(id)}">${esc(names[id] || id)}
+                  <button data-uncover="${i}" title="Remove ${esc(id)}">✕</button></span>`).join("") || `<span class="hint field">No curtains yet.</span>`}
+              </div>
+              <div class="add-row">
+                <input type="text" list="cover-choices" data-cover-input placeholder="cover.bedroom_curtains_left">
+                <datalist id="cover-choices">
+                  ${this.coverChoices.filter((c) => !r.covers.includes(c.entity_id))
+                    .map((c) => `<option value="${esc(c.entity_id)}">${esc(c.name)}</option>`).join("")}
+                </datalist>
+                <button data-add-cover>Add</button>
+              </div>
+            </div>
+            ${curtain("normal", "Normal curtain", "Moves straight to where it is sent, all curtains together.")}
+            ${curtain("gentle", "Gentle curtain", "Moves along the room's curves.")}
+            <div class="group">
+              <span class="group-label">Scale</span>
+              <div class="radios">
+                <label class="check"><input type="radio" name="scale" value="open_is_100" ${d.scale !== "closed_is_100" ? "checked" : ""}> 100 % = open</label>
+                <label class="check"><input type="radio" name="scale" value="closed_is_100" ${d.scale === "closed_is_100" ? "checked" : ""}> 100 % = closed</label>
+              </div>
+              <span class="hint field">How this page, the card and the gentle_cover.move action count. Home Assistant and HomeKit always use 100 % = open.</span>
+            </div>
+            <div class="group">
+              <span class="group-label">HomeKit</span>
+              <span class="hint field">To show these curtains in the Home app, add them under <span class="mono">homekit: filter: include_entities:</span> in configuration.yaml and restart.</span>
+              <pre class="homekit" data-homekit>${esc(enabled.join("\n"))}</pre>
+              <div><button class="small" data-copy-homekit>Copy</button></div>
+            </div>
+          </div>`;
   }
 
   bindBody(body) {
@@ -508,16 +569,90 @@ class GentleCoverPage extends HTMLElement {
         this.point = null;
         this.setCurve(structuredClone(this.presets[this.tab][button.dataset.preset]));
       }));
-    body.querySelector("[data-remove]").addEventListener("click", () => this.removePoint());
+    body.querySelector("[data-remove]")?.addEventListener("click", () => this.removePoint());
     body.querySelectorAll("[data-field]").forEach((input) =>
       input.addEventListener("input", () => {
-        const value = Number(input.value);
-        if (!Number.isFinite(value)) return;
+        // An empty or out-of-range field is left out of the draft until it
+        // holds something the room can use.
+        const [low, high] = NUMBER_FIELDS[input.dataset.field];
+        const value = input.value.trim() === "" ? NaN : Number(input.value);
+        const usable = Number.isFinite(value) && value >= low && value <= high;
+        input.setAttribute("aria-invalid", String(!usable));
+        if (!usable) return;
         this.draft[input.dataset.field] = value;
         this.edited();
       }));
+    this.bindRoomForm(body);
     body.querySelectorAll("[data-test]").forEach((button) =>
       button.addEventListener("click", () => this.test(button.dataset.test)));
+  }
+
+  bindRoomForm(body) {
+    const changed = () => {
+      this.status = "";
+      this.renderSaveState();
+    };
+    body.querySelector("[data-room-title]")?.addEventListener("input", (event) => {
+      this.draftRoom.title = event.target.value;
+      changed();
+    });
+    body.querySelectorAll("[data-text]").forEach((input) =>
+      input.addEventListener("input", () => {
+        this.draft[input.dataset.text] = input.value;
+        changed();
+      }));
+    body.querySelectorAll("[data-bool]").forEach((box) =>
+      box.addEventListener("change", () => {
+        const key = box.dataset.bool;
+        const other = key === "normal_enabled" ? "gentle_enabled" : "normal_enabled";
+        if (!box.checked && !this.draft[other]) {
+          // A room with neither curtain would have nothing to show.
+          box.checked = true;
+          this.error = "A room needs at least one curtain; switch the other one on first.";
+          this.renderNotice();
+          return;
+        }
+        this.draft[key] = box.checked;
+        this.error = "";
+        this.renderBody();
+      }));
+    body.querySelectorAll("input[name=scale]").forEach((radio) =>
+      radio.addEventListener("change", () => {
+        this.draft.scale = radio.value;
+        this.renderBody();
+      }));
+    body.querySelectorAll("[data-uncover]").forEach((button) =>
+      button.addEventListener("click", () => {
+        this.draftRoom.covers.splice(Number(button.dataset.uncover), 1);
+        this.renderBody();
+      }));
+    const add = () => {
+      const input = body.querySelector("[data-cover-input]");
+      const id = input?.value.trim();
+      if (!id || this.draftRoom.covers.includes(id)) return;
+      if (!this.coverChoices.some((c) => c.entity_id === id)) {
+        this.error = `${id} is not a curtain that takes a position.`;
+        this.renderNotice();
+        return;
+      }
+      this.draftRoom.covers.push(id);
+      this.error = "";
+      this.renderBody();
+    };
+    body.querySelector("[data-add-cover]")?.addEventListener("click", add);
+    body.querySelector("[data-cover-input]")?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") add();
+    });
+    body.querySelector("[data-copy-homekit]")?.addEventListener("click", async () => {
+      const text = body.querySelector("[data-homekit]")?.textContent || "";
+      try {
+        await navigator.clipboard.writeText(text);
+        this.status = "Copied";
+      } catch (err) {
+        this.status = "Select the lines and copy them";
+      }
+      this.renderSaveState();
+    });
   }
 
   refreshLive() {
@@ -528,7 +663,9 @@ class GentleCoverPage extends HTMLElement {
         return;
       }
       const position = state.attributes.current_position;
-      node.textContent = `${state.state}${position === undefined ? "" : ` · ${position} %`}`;
+      const scale = node.dataset.scale;
+      const shown = position === undefined ? "" : ` · ${Math.round(inScale(position, scale))} %${scale === "closed_is_100" ? " closed" : ""}`;
+      node.textContent = `${state.state}${shown}`;
     });
   }
 
@@ -563,7 +700,7 @@ class GentleCoverPage extends HTMLElement {
       `<line x1="${M.left}" x2="${W - M.right}" y1="${yOf(p)}" y2="${yOf(p)}"></line>`).join("") +
       xTicks.map((m) => `<line x1="${xOf(m / durationMin)}" x2="${xOf(m / durationMin)}" y1="${M.top}" y2="${H - M.bottom}"></line>`).join("");
     const axis = [0, 25, 50, 75, 100].map((p) =>
-      `<text x="${M.left - 8}" y="${yOf(p) + 4}" text-anchor="end">${p}%</text>`).join("") +
+      `<text x="${M.left - 8}" y="${yOf(p) + 4}" text-anchor="end">${inScale(p, this.scale())}%</text>`).join("") +
       xTicks.map((m) => `<text x="${xOf(m / durationMin)}" y="${H - M.bottom + 20}" text-anchor="middle">${m}m</text>`).join("");
 
     // Until the server has drawn the curve, straight lines between the points.
@@ -643,6 +780,10 @@ class GentleCoverPage extends HTMLElement {
         // Followed on the window, not the handle: every move redraws the
         // chart, which replaces the handle the drag began on.
         const move = (e) => {
+          if (e.buttons === 0) {
+            up();
+            return;
+          }
           const current = this.shadowRoot.querySelector("[data-svg]");
           if (!current) return;
           const { t, p } = this.toCurve(current, e);

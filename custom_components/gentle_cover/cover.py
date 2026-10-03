@@ -65,6 +65,23 @@ from .room_moves import RoomMoves
 _LOGGER = logging.getLogger(__name__)
 
 
+# Plain constants, not read back from the classes: Home Assistant turns an
+# entity class's _attr_ attributes into properties, so the class attribute is
+# a property object, not the number.
+BASE_FEATURES = (
+    CoverEntityFeature.OPEN
+    | CoverEntityFeature.CLOSE
+    | CoverEntityFeature.STOP
+    | CoverEntityFeature.SET_POSITION
+)
+TILT_FEATURES = (
+    CoverEntityFeature.OPEN_TILT
+    | CoverEntityFeature.CLOSE_TILT
+    | CoverEntityFeature.STOP_TILT
+    | CoverEntityFeature.SET_TILT_POSITION
+)
+
+
 def normal_unique_id(entry: ConfigEntry) -> str:
     return f"{entry.entry_id}_normal"
 
@@ -123,12 +140,7 @@ class RoomCover(CoverEntity):
     # every entity with a device, so the curtains follow a renamed room.
     _attr_has_entity_name = True
     _attr_device_class = CoverDeviceClass.CURTAIN
-    _attr_supported_features = (
-        CoverEntityFeature.OPEN
-        | CoverEntityFeature.CLOSE
-        | CoverEntityFeature.STOP
-        | CoverEntityFeature.SET_POSITION
-    )
+    _attr_supported_features = BASE_FEATURES
     _attr_should_poll = False
     # The settings change only when the room is saved; recording them with
     # every position change would fill the database with copies.
@@ -361,13 +373,7 @@ class NormalCover(RoomCover):
         if self._gentle_allowed():
             # Tilt is not a tilt here: it is "this position, gently". HomeKit
             # shows it as a tilt angle, -90° (closed) to 90° (open).
-            self._attr_supported_features = (
-                RoomCover._attr_supported_features
-                | CoverEntityFeature.OPEN_TILT
-                | CoverEntityFeature.CLOSE_TILT
-                | CoverEntityFeature.STOP_TILT
-                | CoverEntityFeature.SET_TILT_POSITION
-            )
+            self._attr_supported_features = BASE_FEATURES | TILT_FEATURES
 
     def _gentle_allowed(self) -> bool:
         return bool(self._option(CONF_TILT_GENTLE))

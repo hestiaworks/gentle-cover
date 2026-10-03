@@ -31,7 +31,7 @@ from homeassistant.helpers import entity_platform, entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
-from homeassistant.util import dt as dt_util
+from homeassistant.util import dt as dt_util, slugify
 
 from .const import (
     ATTR_DURATION,
@@ -154,6 +154,11 @@ class RoomCover(CoverEntity):
             list(members) if members is not None else list(entry.data[CONF_COVERS])
         )
         self._attr_name = self._entity_name()
+        # Suggested only for a curtain seen for the first time; an existing
+        # one keeps its entity id. Without it Home Assistant puts the area and
+        # the device in front ("cover.living_room_living_room_living_room").
+        shown = " ".join(part for part in (entry.title, self._attr_name or "") if part)
+        self.entity_id = f"{COVER_DOMAIN}.{slugify(shown)}"
         self._move: GentleMove | None = None
         self._direction = OPEN
         # What the card draws while a move runs: the plan from the average

@@ -5,7 +5,7 @@ from __future__ import annotations
 from .curve import CLOSE, OPEN, PRESETS
 
 DOMAIN = "gentle_cover"
-MINOR_VERSION = 4
+MINOR_VERSION = 5
 
 CONF_COVERS = "covers"
 CONF_OPEN_DURATION = "open_duration"
@@ -24,6 +24,9 @@ CONF_SCALE = "scale"
 CONF_NORMAL_COVERS = "normal_covers"
 CONF_GENTLE_COVERS = "gentle_covers"
 CONF_INDIVIDUAL = "individual"
+# The normal and own curtains read a tilt as "go to this position gently",
+# so HomeKit's tilt angle can start a gentle move on a plain curtain.
+CONF_TILT_GENTLE = "tilt_gentle"
 
 # How the page, the card and the move action count. Home Assistant and
 # HomeKit always see 100 = open; this is only how numbers are shown and read.

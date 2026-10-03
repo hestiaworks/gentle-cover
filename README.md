@@ -100,6 +100,29 @@ The normal curtain and the curtains offered on their own are ordinary covers.
 A command on one of them during a gentle move stops the gentle move if it
 moves one of the same real curtains, like any other hands-off.
 
+### Gentle by tilt
+
+With **Tilt moves gently** on (Room tab), the normal curtain and the curtains
+on their own get a tilt that means "go here gently": setting the tilt starts a
+gentle move of that curtain along the room's curves, while its position still
+moves at full speed. So two accessories — say *Left* and *Right* — give every
+combination: position for normal moves, tilt for gentle ones, from HomeKit,
+Home Assistant or automations.
+
+HomeKit shows the tilt as an angle: **90° = open, −90° = closed, 0° = half-way**
+(Home Assistant: tilt 100 % = open). The tilt always follows the curtain, so it
+climbs as a gentle move goes. Full-speed commands and stop end a gentle move.
+It is a convention, not a real tilt — anyone else will see a tilt control on a
+curtain.
+
+```yaml
+action: cover.set_cover_tilt_position
+target:
+  entity_id: cover.bedroom_left
+data:
+  tilt_position: 100   # gently fully open
+```
+
 To use a different duration for one gentle move, call the action (`position`
 in the room's scale):
 
@@ -124,6 +147,10 @@ draws the room's curve and current
 position in the room's scale, and during a gentle move a marker travelling
 along the curve with the time left. It is read-only; it is also in the card
 picker.
+
+## Upgrading from 0.4
+
+Nothing changes until you switch **Tilt moves gently** on for a room.
 
 ## Upgrading from 0.3
 

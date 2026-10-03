@@ -22,6 +22,7 @@ from .const import (
     CONF_OPEN_DURATION,
     CONF_SCALE,
     CONF_STEP_INTERVAL,
+    CONF_TILT_GENTLE,
     DEFAULT_OPTIONS,
     SCALE_CLOSED_IS_100,
     SCALE_OPEN_IS_100,
@@ -64,6 +65,7 @@ def defaults(title: str, covers: list[str]) -> dict[str, Any]:
             CONF_NORMAL_COVERS: list(covers),
             CONF_GENTLE_COVERS: list(covers),
             CONF_INDIVIDUAL: {},
+            CONF_TILT_GENTLE: False,
         }
     )
     return options
@@ -117,13 +119,16 @@ def migrate_entry_options(
 ) -> dict[str, Any]:
     """Bring a room's options from any earlier minor version to the current
     one, each step only where it is needed."""
-    if minor_version >= 4:
+    if minor_version >= 5:
         return options
     if minor_version < 2:
         options = migrate_options(options)
     if minor_version < 3:
         options = migrate_room_settings(options, title)
-    return migrate_room_covers(options, covers)
+    if minor_version < 4:
+        options = migrate_room_covers(options, covers)
+    # Tilt meant nothing before 5; it stays that way until switched on.
+    return {**options, CONF_TILT_GENTLE: options.get(CONF_TILT_GENTLE, False)}
 
 
 def own_curtains_wanted(covers: list[str], individual: dict[str, Any]) -> list[str]:
@@ -189,7 +194,7 @@ def validate_options(data: dict[str, Any], covers: list[str]) -> dict[str, Any]:
         result[key] = value
     result[CONF_OPEN_CURVE] = validate_curve(data.get(CONF_OPEN_CURVE), OPEN)
     result[CONF_CLOSE_CURVE] = validate_curve(data.get(CONF_CLOSE_CURVE), CLOSE)
-    for key in (CONF_NORMAL_ENABLED, CONF_GENTLE_ENABLED):
+    for key in (CONF_NORMAL_ENABLED, CONF_GENTLE_ENABLED, CONF_TILT_GENTLE):
         if not isinstance(data.get(key), bool):
             raise ValueError(f"{key} must be on or off")
         result[key] = data[key]

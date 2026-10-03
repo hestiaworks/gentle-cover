@@ -184,7 +184,7 @@ const PRESET_LABELS = { slow_start: "Slow start", even: "Even", hold_then_open: 
 const OPTION_KEYS = [
   "open_duration", "close_duration", "open_curve", "close_curve", "step_interval", "min_step",
   "normal_enabled", "normal_name", "gentle_enabled", "gentle_name", "scale",
-  "normal_covers", "gentle_covers", "individual",
+  "normal_covers", "gentle_covers", "individual", "tilt_gentle",
 ];
 const TABS = [["open", "Opening"], ["close", "Closing"], ["room", "Room"]];
 const NUMBER_FIELDS = { open_duration: [1, 120], close_duration: [1, 120], step_interval: [30, 600], min_step: [1, 50] };
@@ -321,6 +321,7 @@ class GentleCoverPage extends HTMLElement {
       this.saved.normal_covers = this.saved.normal_covers || [...room.covers];
       this.saved.gentle_covers = this.saved.gentle_covers || [...room.covers];
       this.saved.individual = this.saved.individual || {};
+      this.saved.tilt_gentle = Boolean(this.saved.tilt_gentle);
     }
     this.draft = this.saved ? structuredClone(this.saved) : null;
     this.savedRoom = room ? { title: room.title, covers: [...room.covers] } : null;
@@ -662,6 +663,11 @@ class GentleCoverPage extends HTMLElement {
             ${curtain("gentle", "Gentle curtain", "Moves along the room's curves.")}
             <span class="hint">Names come after the room's name, as Home Assistant shows every device's entities; renaming the room renames its curtains. The Home app then drops the room's name again for accessories in that room.</span>
             <div class="group">
+              <span class="group-label">Gentle by tilt</span>
+              <label class="check"><input type="checkbox" data-tilt ${d.tilt_gentle ? "checked" : ""}> Tilt moves gently</label>
+              <span class="hint">The normal curtain and the curtains on their own get a tilt that means "go here gently": setting it starts a gentle move along this room's curves, while the position still moves at full speed. HomeKit shows it as a tilt angle: 90° is open, −90° closed, 0° half-way. The tilt follows the curtain, so it climbs as a gentle move goes.</span>
+            </div>
+            <div class="group">
               <span class="group-label">Scale</span>
               <div class="radios">
                 <label class="check"><input type="radio" name="scale" value="open_is_100" ${d.scale !== "closed_is_100" ? "checked" : ""}> 100 % = open</label>
@@ -748,6 +754,10 @@ class GentleCoverPage extends HTMLElement {
         this.error = "";
         this.renderBody();
       }));
+    body.querySelector("[data-tilt]")?.addEventListener("change", (event) => {
+      this.draft.tilt_gentle = event.target.checked;
+      changed();
+    });
     body.querySelectorAll("input[name=scale]").forEach((radio) =>
       radio.addEventListener("change", () => {
         this.draft.scale = radio.value;

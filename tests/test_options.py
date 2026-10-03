@@ -206,7 +206,7 @@ class OptionsTest(unittest.TestCase):
                          (covers, covers, {}))
         # Already current: untouched.
         current = options.defaults("Bedroom", covers)
-        self.assertEqual(options.migrate_entry_options(4, current, "Bedroom", covers), current)
+        self.assertEqual(options.migrate_entry_options(5, current, "Bedroom", covers), current)
 
     def test_own_curtains_wanted(self):
         covers = ["cover.l", "cover.r"]
@@ -214,6 +214,20 @@ class OptionsTest(unittest.TestCase):
                       "cover.gone": {"enabled": True, "name": "G"}}
         self.assertEqual(options.own_curtains_wanted(covers, individual), ["cover.l"])
         self.assertEqual(options.own_curtains_wanted(covers, {}), [])
+
+    def test_tilt_gentle_is_off_until_asked(self):
+        self.assertFalse(options.defaults("Bedroom", ["cover.l"])["tilt_gentle"])
+        migrated = options.migrate_entry_options(4, options.defaults("Bedroom", ["cover.l"]) | {}, "Bedroom", ["cover.l"])
+        self.assertIn("tilt_gentle", migrated)
+        self.assertFalse(options.migrate_entry_options(1, {}, "Bedroom", ["cover.l"])["tilt_gentle"])
+
+    def test_validate_tilt_gentle(self):
+        data = options.defaults("Bedroom", ["cover.l"])
+        data["tilt_gentle"] = True
+        self.assertTrue(options.validate_options(data, ["cover.l"])["tilt_gentle"])
+        data["tilt_gentle"] = "yes"
+        with self.assertRaises(ValueError):
+            options.validate_options(data, ["cover.l"])
 
 
 if __name__ == "__main__":

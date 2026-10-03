@@ -48,13 +48,14 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Easings became curves in minor version 2; rooms got two named
-    curtains and a scale in 3, and a choice of which curtains each moves in 4."""
+    curtains and a scale in 3, a choice of which curtains each moves in 4, and
+    gentle moves by tilt in 5."""
     if entry.version != 1:
         return False
-    if entry.minor_version >= 4:
+    if entry.minor_version >= 5:
         return True
     options = migrate_entry_options(
         entry.minor_version, dict(entry.options), entry.title, list(entry.data.get(CONF_COVERS, []))
     )
-    hass.config_entries.async_update_entry(entry, options=options, minor_version=4)
+    hass.config_entries.async_update_entry(entry, options=options, minor_version=5)
     return True

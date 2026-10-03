@@ -10,6 +10,7 @@ from typing import Any
 import voluptuous as vol
 from homeassistant.components.cover import (
     ATTR_POSITION,
+    ATTR_TILT_POSITION,
     DOMAIN as COVER_DOMAIN,
     CoverDeviceClass,
     CoverEntity,
@@ -49,6 +50,7 @@ from .const import (
     CONF_OPEN_DURATION,
     CONF_SCALE,
     CONF_STEP_INTERVAL,
+    CONF_TILT_GENTLE,
     DEFAULT_OPTIONS,
     DOMAIN,
     SCALE_OPEN_IS_100,
@@ -111,8 +113,9 @@ async def async_setup_entry(
 
 
 class RoomCover(CoverEntity):
-    """What both curtains of a room share: the room, its real curtains, and
-    a position that is theirs."""
+    """What every curtain of a room shares: the room, the real curtains it
+    moves, a position that is theirs, and the gentle move along the room's
+    curves (which the gentle curtain always uses, and the others by tilt)."""
 
     # Named like any entity of a device: the room's name, then the curtain's
     # own (empty for none). Home Assistant builds friendly names this way for
@@ -150,6 +153,12 @@ class RoomCover(CoverEntity):
             list(members) if members is not None else list(entry.data[CONF_COVERS])
         )
         self._attr_name = self._entity_name()
+        self._move: GentleMove | None = None
+        self._direction = OPEN
+        # What the card draws while a move runs: the plan from the average
+        # position, and when it began.
+        self._shown: Plan | None = None
+        self._started_at: datetime | None = None
         # A device per room, carrying the room's name.
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
@@ -169,9 +178,7 @@ class RoomCover(CoverEntity):
             CONF_NORMAL_NAME: "",
             CONF_GENTLE_NAME: "Gentle",
             CONF_SCALE: SCALE_OPEN_IS_100,
-            CONF_NORMAL_COVERS: list(self._entry.data[CONF_COVERS]),
-            CONF_GENTLE_COVERS: list(self._entry.data[CONF_COVERS]),
-            CONF_INDIVIDUAL: {},
+            CONF_TILT_GENTLE: False,
         }.get(key)
 
     def _positions(self) -> list[float]:
@@ -199,7 +206,7 @@ class RoomCover(CoverEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        return {
+        attributes = {
             "covers": self._covers,
             "room_entry_id": self._entry.entry_id,
             "scale": self._option(CONF_SCALE),
@@ -210,111 +217,6 @@ class RoomCover(CoverEntity):
             "step_interval": self._option(CONF_STEP_INTERVAL),
             "min_step": self._option(CONF_MIN_STEP),
         }
-
-    async def async_added_to_hass(self) -> None:
-        # Our position is the real curtains' position: follow them.
-        self.async_on_remove(
-            async_track_state_change_event(
-                self.hass, self._covers, self._on_member_changed
-            )
-        )
-
-    @callback
-    def _on_member_changed(self, event: Event) -> None:
-        self.async_write_ha_state()
-
-    async def async_gentle_move(self, position: int, duration: float | None = None) -> None:
-        raise ServiceValidationError("gentle_cover.move is for a room's gentle curtain")
-
-
-class NormalCover(RoomCover):
-    """The room's curtains, all of them at once, at full speed."""
-
-    _name_key = CONF_NORMAL_NAME
-
-    def __init__(self, entry: ConfigEntry, members: list[str] | None = None) -> None:
-        if members is None:
-            members = entry.options.get(CONF_NORMAL_COVERS, entry.data[CONF_COVERS])
-        super().__init__(entry, members)
-        self._attr_unique_id = normal_unique_id(entry)
-
-    def _members_in(self, state: str) -> bool:
-        return any(
-            (member := self.hass.states.get(entity_id)) is not None and member.state == state
-            for entity_id in self._covers
-        )
-
-    @property
-    def is_opening(self) -> bool:
-        return self._members_in(CoverState.OPENING)
-
-    @property
-    def is_closing(self) -> bool:
-        return self._members_in(CoverState.CLOSING)
-
-    async def _command(self, service: str, **data: Any) -> None:
-        # One call for all of them, so the halves start together.
-        await self.hass.services.async_call(
-            COVER_DOMAIN,
-            service,
-            {ATTR_ENTITY_ID: self._covers, **data},
-            blocking=True,
-            context=self._context,
-        )
-
-    async def async_open_cover(self, **kwargs: Any) -> None:
-        await self._command(SERVICE_OPEN_COVER)
-
-    async def async_close_cover(self, **kwargs: Any) -> None:
-        await self._command(SERVICE_CLOSE_COVER)
-
-    async def async_set_cover_position(self, **kwargs: Any) -> None:
-        await self._command(SERVICE_SET_COVER_POSITION, **{ATTR_POSITION: kwargs[ATTR_POSITION]})
-
-    async def async_stop_cover(self, **kwargs: Any) -> None:
-        await self._command(SERVICE_STOP_COVER)
-
-
-class OwnCover(NormalCover):
-    """One real curtain on its own, at full speed, named like the room's
-    others and counting in the room's scale."""
-
-    def __init__(self, entry: ConfigEntry, entity_id: str) -> None:
-        self._member = entity_id
-        super().__init__(entry, [entity_id])
-        self._attr_unique_id = own_unique_id(entry, entity_id)
-
-    def _entity_name(self) -> str | None:
-        own = self._entry.options.get(CONF_INDIVIDUAL, {}).get(self._member, {})
-        return own.get("name") or None
-
-
-class GentleCover(RoomCover):
-    """The room's curtains along the room's curve."""
-
-    _name_key = CONF_GENTLE_NAME
-
-    def __init__(self, entry: ConfigEntry) -> None:
-        super().__init__(entry, entry.options.get(CONF_GENTLE_COVERS, entry.data[CONF_COVERS]))
-        self._attr_unique_id = gentle_unique_id(entry)
-        self._move: GentleMove | None = None
-        self._direction = OPEN
-        # What the card draws while a move runs: the room's own plan, from
-        # the average position, and when it began.
-        self._shown: Plan | None = None
-        self._started_at: datetime | None = None
-
-    @property
-    def is_opening(self) -> bool:
-        return self._move is not None and self._direction == OPEN
-
-    @property
-    def is_closing(self) -> bool:
-        return self._move is not None and self._direction == CLOSE
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        attributes = super().extra_state_attributes
         if self._move is not None:
             attributes["target_position"] = self._move.target
             attributes["move_direction"] = self._direction
@@ -327,31 +229,38 @@ class GentleCover(RoomCover):
                 attributes["move_curve_end"] = round(self._shown.t_end, 4)
         return attributes
 
+    async def async_added_to_hass(self) -> None:
+        # Our position is the real curtains' position: follow them.
+        self.async_on_remove(
+            async_track_state_change_event(
+                self.hass, self._covers, self._on_member_changed
+            )
+        )
+
     async def async_will_remove_from_hass(self) -> None:
         self._cancel_move()
 
-    async def async_open_cover(self, **kwargs: Any) -> None:
-        self._start(100)
-
-    async def async_close_cover(self, **kwargs: Any) -> None:
-        self._start(0)
-
-    async def async_set_cover_position(self, **kwargs: Any) -> None:
-        self._start(int(kwargs[ATTR_POSITION]))
-
-    async def async_stop_cover(self, **kwargs: Any) -> None:
-        # The curtains finish their current short run; nothing more is sent.
-        self._cancel_move()
+    @callback
+    def _on_member_changed(self, event: Event) -> None:
         self.async_write_ha_state()
 
+    # --- the gentle move ------------------------------------------------------
+
+    def _gentle_allowed(self) -> bool:
+        return False
+
     async def async_gentle_move(self, position: int, duration: float | None = None) -> None:
+        if not self._gentle_allowed():
+            raise ServiceValidationError(
+                "gentle_cover.move is for a gentle curtain, or one whose room moves gently by tilt"
+            )
         # The action speaks the room's scale; the curtains speak 100 = open.
-        self._start(round(from_room_scale(position, self._option(CONF_SCALE))), duration)
+        self._start_gentle(round(from_room_scale(position, self._option(CONF_SCALE))), duration)
 
     @callback
-    def _start(self, target: int, duration: float | None = None) -> None:
+    def _start_gentle(self, target: int, duration: float | None = None) -> None:
         # A new command always replaces the running move, before planning, so
-        # two moves never drive the same curtains.
+        # two moves never drive the same curtains from one entity.
         self._cancel_move()
         current = self.current_cover_position
         direction = OPEN if current is None or target >= current else CLOSE
@@ -405,4 +314,144 @@ class GentleCover(RoomCover):
         self._move = None
         self._shown = None
         self._started_at = None
+        self.async_write_ha_state()
+
+
+class NormalCover(RoomCover):
+    """The room's chosen curtains, all of them at once, at full speed — and,
+    when the room says so, gently to wherever their tilt is set."""
+
+    _name_key = CONF_NORMAL_NAME
+
+    def __init__(self, entry: ConfigEntry, members: list[str] | None = None) -> None:
+        if members is None:
+            members = entry.options.get(CONF_NORMAL_COVERS, entry.data[CONF_COVERS])
+        super().__init__(entry, members)
+        self._attr_unique_id = normal_unique_id(entry)
+        if self._gentle_allowed():
+            # Tilt is not a tilt here: it is "this position, gently". HomeKit
+            # shows it as a tilt angle, -90° (closed) to 90° (open).
+            self._attr_supported_features = (
+                RoomCover._attr_supported_features
+                | CoverEntityFeature.OPEN_TILT
+                | CoverEntityFeature.CLOSE_TILT
+                | CoverEntityFeature.STOP_TILT
+                | CoverEntityFeature.SET_TILT_POSITION
+            )
+
+    def _gentle_allowed(self) -> bool:
+        return bool(self._option(CONF_TILT_GENTLE))
+
+    def _members_in(self, state: str) -> bool:
+        return any(
+            (member := self.hass.states.get(entity_id)) is not None and member.state == state
+            for entity_id in self._covers
+        )
+
+    @property
+    def is_opening(self) -> bool:
+        return (self._move is not None and self._direction == OPEN) or self._members_in(
+            CoverState.OPENING
+        )
+
+    @property
+    def is_closing(self) -> bool:
+        return (self._move is not None and self._direction == CLOSE) or self._members_in(
+            CoverState.CLOSING
+        )
+
+    @property
+    def current_cover_tilt_position(self) -> int | None:
+        # Where the curtains are, so a gentle move shows its progress as the
+        # tilt climbs towards where it was sent.
+        return self.current_cover_position if self._gentle_allowed() else None
+
+    async def _command(self, service: str, **data: Any) -> None:
+        # Full speed replaces a gentle move of this curtain at once.
+        self._cancel_move()
+        # One call for all of them, so the halves start together.
+        await self.hass.services.async_call(
+            COVER_DOMAIN,
+            service,
+            {ATTR_ENTITY_ID: self._covers, **data},
+            blocking=True,
+            context=self._context,
+        )
+
+    async def async_open_cover(self, **kwargs: Any) -> None:
+        await self._command(SERVICE_OPEN_COVER)
+
+    async def async_close_cover(self, **kwargs: Any) -> None:
+        await self._command(SERVICE_CLOSE_COVER)
+
+    async def async_set_cover_position(self, **kwargs: Any) -> None:
+        await self._command(SERVICE_SET_COVER_POSITION, **{ATTR_POSITION: kwargs[ATTR_POSITION]})
+
+    async def async_stop_cover(self, **kwargs: Any) -> None:
+        await self._command(SERVICE_STOP_COVER)
+
+    async def async_set_cover_tilt_position(self, **kwargs: Any) -> None:
+        if self._gentle_allowed():
+            self._start_gentle(int(kwargs[ATTR_TILT_POSITION]))
+
+    async def async_open_cover_tilt(self, **kwargs: Any) -> None:
+        if self._gentle_allowed():
+            self._start_gentle(100)
+
+    async def async_close_cover_tilt(self, **kwargs: Any) -> None:
+        if self._gentle_allowed():
+            self._start_gentle(0)
+
+    async def async_stop_cover_tilt(self, **kwargs: Any) -> None:
+        # The curtains finish their current short run; nothing more is sent.
+        self._cancel_move()
+        self.async_write_ha_state()
+
+
+class OwnCover(NormalCover):
+    """One real curtain on its own, at full speed (and gently by tilt),
+    named like the room's others and counting in the room's scale."""
+
+    def __init__(self, entry: ConfigEntry, entity_id: str) -> None:
+        self._member = entity_id
+        super().__init__(entry, [entity_id])
+        self._attr_unique_id = own_unique_id(entry, entity_id)
+
+    def _entity_name(self) -> str | None:
+        own = self._entry.options.get(CONF_INDIVIDUAL, {}).get(self._member, {})
+        return own.get("name") or None
+
+
+class GentleCover(RoomCover):
+    """The room's chosen curtains along the room's curve."""
+
+    _name_key = CONF_GENTLE_NAME
+
+    def __init__(self, entry: ConfigEntry) -> None:
+        super().__init__(entry, entry.options.get(CONF_GENTLE_COVERS, entry.data[CONF_COVERS]))
+        self._attr_unique_id = gentle_unique_id(entry)
+
+    def _gentle_allowed(self) -> bool:
+        return True
+
+    @property
+    def is_opening(self) -> bool:
+        return self._move is not None and self._direction == OPEN
+
+    @property
+    def is_closing(self) -> bool:
+        return self._move is not None and self._direction == CLOSE
+
+    async def async_open_cover(self, **kwargs: Any) -> None:
+        self._start_gentle(100)
+
+    async def async_close_cover(self, **kwargs: Any) -> None:
+        self._start_gentle(0)
+
+    async def async_set_cover_position(self, **kwargs: Any) -> None:
+        self._start_gentle(int(kwargs[ATTR_POSITION]))
+
+    async def async_stop_cover(self, **kwargs: Any) -> None:
+        # The curtains finish their current short run; nothing more is sent.
+        self._cancel_move()
         self.async_write_ha_state()

@@ -18,6 +18,7 @@ from .const import DOMAIN
 from .const import CONF_COVERS
 from .options import migrate_entry_options
 from .page import async_setup_page
+from .room_moves import RoomMoves
 
 PLATFORMS = [Platform.COVER]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -31,6 +32,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    # The room's running gentle moves, shared by its curtains.
+    entry.runtime_data = RoomMoves()
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     # The options are read when a move is planned; rebuilding the entity is
     # the simplest way to drop any move planned under the old ones.

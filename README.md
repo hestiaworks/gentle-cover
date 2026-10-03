@@ -113,7 +113,20 @@ HomeKit shows the tilt as an angle: **90° = open, −90° = closed, 0° = half-
 (Home Assistant: tilt 100 % = open). The tilt always follows the curtain, so it
 climbs as a gentle move goes. Full-speed commands and stop end a gentle move.
 It is a convention, not a real tilt — anyone else will see a tilt control on a
-curtain.
+curtain. Tilt is always 100 % = open, whatever the room's scale.
+
+- **The newest gentle command wins.** Starting a gentle move — by tilt, on the
+  gentle curtain or with `gentle_cover.move` — stops any other gentle move in
+  the room that drives one of the same curtains.
+- **After switching *Tilt moves gently* on or off**, reload the HomeKit Bridge
+  (Settings → Devices & services → HomeKit Bridge → ⋮ → Reload) or restart
+  Home Assistant; HomeKit only picks up the new tilt control when the
+  accessory is rebuilt.
+- **HomeKit scenes**: a scene that stores both a position and a tilt for the
+  same curtain sends both, and which one wins depends on the order they
+  arrive. Set either the position (normal) or the tilt (gentle) in a scene,
+  not both.
+- `gentle_cover.move` also works on these curtains while tilt is on.
 
 ```yaml
 action: cover.set_cover_tilt_position
@@ -124,7 +137,7 @@ data:
 ```
 
 To use a different duration for one gentle move, call the action (`position`
-in the room's scale):
+in the room's scale — unlike tilt, which is always 100 % = open):
 
 ```yaml
 action: gentle_cover.move

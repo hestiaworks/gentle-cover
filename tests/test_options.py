@@ -217,8 +217,10 @@ class OptionsTest(unittest.TestCase):
 
     def test_tilt_gentle_is_off_until_asked(self):
         self.assertFalse(options.defaults("Bedroom", ["cover.l"])["tilt_gentle"])
-        migrated = options.migrate_entry_options(4, options.defaults("Bedroom", ["cover.l"]) | {}, "Bedroom", ["cover.l"])
-        self.assertIn("tilt_gentle", migrated)
+        before_tilt = options.defaults("Bedroom", ["cover.l"])
+        del before_tilt["tilt_gentle"]
+        migrated = options.migrate_entry_options(4, before_tilt, "Bedroom", ["cover.l"])
+        self.assertIs(migrated["tilt_gentle"], False)
         self.assertFalse(options.migrate_entry_options(1, {}, "Bedroom", ["cover.l"])["tilt_gentle"])
 
     def test_validate_tilt_gentle(self):
@@ -228,6 +230,10 @@ class OptionsTest(unittest.TestCase):
         data["tilt_gentle"] = "yes"
         with self.assertRaises(ValueError):
             options.validate_options(data, ["cover.l"])
+        # A page from before tilt sends no such key: that is off, not an error.
+        old_page = options.defaults("Bedroom", ["cover.l"])
+        del old_page["tilt_gentle"]
+        self.assertFalse(options.validate_options(old_page, ["cover.l"])["tilt_gentle"])
 
 
 if __name__ == "__main__":

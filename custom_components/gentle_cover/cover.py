@@ -60,6 +60,7 @@ from .curve import CLOSE, OPEN, Curve
 from .mover import GentleMove, member_position
 from .options import from_room_scale, own_curtains_wanted
 from .planner import Plan, plan
+from .room_moves import RoomMoves
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -289,12 +290,34 @@ class RoomCover(CoverEntity):
         # which only listens to the move it holds.
         self._move = move
         self._direction = direction
+        # The newest command wins: any other gentle move in the room on these
+        # curtains stops now, before this one sends anything.
+        if (moves := self._room_moves()) is not None:
+            moves.claim(self, self._covers, self._stopped_by_newer)
         if move.start():
             start = current if current is not None else (0 if direction == OPEN else 100)
             self._shown = plan(start, target, curve, duration_s, min_step, interval_s)
             self._started_at = dt_util.utcnow()
         else:
             self._move = None
+            self._release()
+        self.async_write_ha_state()
+
+    def _room_moves(self) -> RoomMoves | None:
+        return getattr(self._entry, "runtime_data", None)
+
+    def _release(self) -> None:
+        if (moves := self._room_moves()) is not None:
+            moves.release(self)
+
+    @callback
+    def _stopped_by_newer(self) -> None:
+        """Another curtain of the room started a gentle move on ours."""
+        if self._move is not None:
+            self._move.cancel()
+            self._move = None
+        self._shown = None
+        self._started_at = None
         self.async_write_ha_state()
 
     @callback
@@ -304,6 +327,7 @@ class RoomCover(CoverEntity):
             self._move = None
         self._shown = None
         self._started_at = None
+        self._release()
 
     @callback
     def _move_ended(self, move: GentleMove, reason: str) -> None:
@@ -311,6 +335,7 @@ class RoomCover(CoverEntity):
             # A move already replaced or cancelled has nothing left to say.
             return
         _LOGGER.debug("%s: gentle move ended (%s)", self.entity_id, reason)
+        self._release()
         self._move = None
         self._shown = None
         self._started_at = None

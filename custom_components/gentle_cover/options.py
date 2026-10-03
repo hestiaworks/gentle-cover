@@ -194,6 +194,8 @@ def validate_options(data: dict[str, Any], covers: list[str]) -> dict[str, Any]:
         result[key] = value
     result[CONF_OPEN_CURVE] = validate_curve(data.get(CONF_OPEN_CURVE), OPEN)
     result[CONF_CLOSE_CURVE] = validate_curve(data.get(CONF_CLOSE_CURVE), CLOSE)
+    # A page from before tilt sends no tilt key; that means off.
+    data = {CONF_TILT_GENTLE: False, **data}
     for key in (CONF_NORMAL_ENABLED, CONF_GENTLE_ENABLED, CONF_TILT_GENTLE):
         if not isinstance(data.get(key), bool):
             raise ValueError(f"{key} must be on or off")

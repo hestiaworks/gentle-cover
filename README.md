@@ -161,7 +161,7 @@ position in the room's scale, and during a gentle move a marker travelling
 along the curve with the time left. It is read-only; it is also in the card
 picker.
 
-## Upgrading from 0.4
+## Upgrading from 0.4 or earlier 0.5 builds
 
 Nothing changes until you switch **Tilt moves gently** on for a room.
 
